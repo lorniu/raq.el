@@ -126,19 +126,19 @@ FMT and ARGS are like arguments in `message'."
 
 Keyword arguments:
   - URL: The URL to send the request to.
-  - METHOD: Request method, symbol like \\='post. If nil guess by data.
-  - HEADERS: Additional headers to include in the request. Alist.
-  - DATA: The data to include in the request. If this is a string, it will be
-          sent directly as request body. If this is a list and every element
+  - METHOD: Request method, symbol like \\='post.  If nil guess by data.
+  - HEADERS: Additional headers to include in the request.  Alist.
+  - DATA: The data to include in the request.  If this is a string, it will be
+          sent directly as request body.  If this is a list and every element
           is (key . value) then this will be joined to a string like a=1&b=2 and
-          then be sent. If this is a list and some element is (key filename)
+          then be sent.  If this is a list and some element is (key filename)
           format, then the list will be normalized as multipart formdata string
           and be sent.
   - FILTER: A function to be called every time when some data returned.
   - DONE: A function to be called when the request succeeds.
   - FAIL: A function to be called when the request fails.
-  - RETRY: How many times it can retry for timeout. Number.
-  - SYNC: Non-nil means request synchronized. Boolean.
+  - RETRY: How many times it can retry for timeout.  Number.
+  - SYNC: Non-nil means request synchronized.  Boolean.
 
 If request async, return the process behind the request."
   (:method :around ((client raq-client) url &rest args &key method _headers data filter done fail sync retry)
@@ -192,7 +192,7 @@ If request async, return the process behind the request."
 (defvar raq-url-extra-filter nil)
 
 (defun raq-url-http-extra-filter (beg end len)
-  "Call `raq-url-extra-filter'. BEG, END and LEN see `after-change-functions'."
+  "Call `raq-url-extra-filter'.  BEG, END and LEN see `after-change-functions'."
   (when (and raq-url-extra-filter (bound-and-true-p url-http-end-of-headers)
              (if (equal url-http-transfer-encoding "chunked") (= beg end) ; when delete
                (= len 0))) ; when insert
@@ -387,7 +387,7 @@ SYNC and RETRY and more."
   "Send a request with `raq-default-client'.
 See the generic method for ARGS and more."
   (unless (and raq-default-client (eieio-object-p raq-default-client) (object-of-class-p raq-default-client 'raq-client))
-    (user-error "Make sure `raq-default-client' is available. eg:\n\n(setq raq-default (raq-url))\n\n\n"))
+    (user-error "Make sure `raq-default-client' is available.  eg:\n\n(setq raq-default (raq-url))\n\n\n"))
   (apply #'raq raq-default-client args))
 
 (provide 'raq)
