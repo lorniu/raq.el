@@ -25,7 +25,7 @@
 
 ;;; Commentary:
 ;;
-;; HTTP Library Adapter, suport url.el and plz.el, and can be extended.
+;; HTTP Library Adapter, support url.el and plz.el, and can be extended.
 ;;
 ;;  - API is simple and uniform
 ;;  - Support both sync/async request
@@ -248,7 +248,7 @@ SYNC and RETRY and more."
                                    (unwind-protect
                                        (if-let* ((err (or (cdr-safe (plist-get status :error))
                                                           (when (or (null url-http-end-of-headers) (= 1 (point-max)))
-                                                            (list 'empty-response "Nothing responsed from server")))))
+                                                            (list 'empty-response "Nothing response from server")))))
                                            (if fail (funcall fail err) (signal 'user-error err))
                                          (if done (funcall done (funcall get-resp-content))))
                                      (kill-buffer cb))))
@@ -266,7 +266,7 @@ SYNC and RETRY and more."
   ((extra-args
     :initarg :args
     :type list
-    :documentation "Extra arguments passed to curl programe."))
+    :documentation "Extra arguments passed to curl program."))
   :documentation "Http Client implemented using `plz.el'.")
 
 (defvar plz-curl-program)
@@ -361,7 +361,7 @@ SYNC and RETRY and more."
         :then (lambda (raw)
                 (when done (funcall done raw)))
         :else (lambda (err)
-                (let ((ret ;; try to compat with error object of url.el, see `url-retrieve' for details
+                (let ((ret ;; try to compatible with error object of url.el, see `url-retrieve' for details
                        (or (plz-error-message err)
                            (when-let* ((r (plz-error-curl-error err)))
                              (list 'curl-error

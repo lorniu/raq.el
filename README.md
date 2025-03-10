@@ -1,6 +1,6 @@
 [![License: GPL-3.0](http://img.shields.io/:license-gpl3-blue.svg)](https://opensource.org/licenses/GPL-3.0)
 
-raq is an HTTP Library Adapter for Emacs. It suport `url.el` and [plz.el](https://github.com/alphapapa/plz.el), and can be extended.
+raq is an HTTP Library Adapter for Emacs. It support `url.el` and [plz.el](https://github.com/alphapapa/plz.el), and can be extended.
 
 ## Features
 
@@ -19,7 +19,7 @@ If you need request with `curl`, you should install `plz.el` first.
 
 ## Usage
 
-Just request through `raq`, with or without specifing an http client:
+Just request through `raq`, with or without specifying an http client:
 ``` emacs-lisp
 (raq "https://httpbin.org/user-agent" ...)
 (raq (raq-plz-client) "https://httpbin.org/user-agent" ...)
