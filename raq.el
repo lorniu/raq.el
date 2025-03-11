@@ -380,15 +380,23 @@ SYNC and RETRY and more."
   (if (and (require 'plz nil t) (executable-find plz-curl-program))
       (raq-plz-client)
     (raq-url-client))
-  "Client used by `raq' by default.")
+  "Client used by `raq' by default.
+This should be instance of symbol `raq-client', or a function with current
+host as argument that return an instance.  If is a function, the client be
+used will be determined dynamically when the `raq' be called.")
 
 ;;;###autoload
 (cl-defmethod raq (&rest args)
   "Send a request with `raq-default-client'.
-See the generic method for ARGS and more."
-  (unless (and raq-default-client (eieio-object-p raq-default-client) (object-of-class-p raq-default-client 'raq-client))
-    (user-error "Make sure `raq-default-client' is available.  eg:\n\n(setq raq-default (raq-url))\n\n\n"))
-  (apply #'raq raq-default-client args))
+In this case, the first argument in ARGS should be url instead of client.
+See the generic method for other ARGS and details."
+  (let ((client (if (functionp raq-default-client)
+                    (funcall raq-default-client
+                             (url-host (url-generic-parse-url (car args))))
+                  raq-default-client)))
+    (unless (and client (eieio-object-p client) (object-of-class-p client 'raq-client))
+      (user-error "Make sure `raq-default-client' is available.  eg:\n\n(setq raq-default (raq-url))\n\n\n"))
+    (apply #'raq client args)))
 
 (provide 'raq)
 

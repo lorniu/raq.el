@@ -2,8 +2,6 @@
 
 raq is an HTTP Library Adapter for Emacs. It support `url.el` and [plz.el](https://github.com/alphapapa/plz.el), and can be extended.
 
-## Features
-
 - Its API is simple and uniform
 - Support both **sync/async** request
 - Support **streaming** request
@@ -37,6 +35,7 @@ Just request through `raq`, with or without specifying an http client:
               (raq-plz-client :args '("--proxy" "socks5://127.0.0.1:1080"))
             (raq-plz-client))))
 ```
+
 Then try to send request like this:
 ``` emacs-lisp
 ;; By default, sync, get
@@ -63,7 +62,7 @@ Then try to send request like this:
      :done (lambda (res) (tooltip-show res))
      :fail (lambda (err) (message "FAIL")))
 
-;; Add :retry to automatically resend the request if timeout
+;; Add :retry to auto resend the request if timeout (available for async only)
 (raq "https://httpbin.org/post"
      :headers '(("Content-Type" . "application/json"))
      :data '(("key" . "value"))
@@ -91,8 +90,8 @@ Then try to send request like this:
 ;; Download
 (with-temp-file "~/aaa.jpeg"
   (insert (raq "https://httpbin.org/image/jpeg")))
-
 ```
+
 ## API
 
 ``` emacs-lisp
