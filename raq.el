@@ -47,6 +47,14 @@
   "Debug flag."
   :type 'boolean)
 
+(defcustom raq-user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36"
+  "Default user agent used by request."
+  :type 'string)
+
+(defcustom raq-max-retry 3
+  "Default retry times when request timeout."
+  :type 'integer)
+
 (defcustom raq-multipart-boundary "raq-boundary-=-=+O0o0O69Oo"
   "A string used as multipart boundary."
   :type 'string)
@@ -98,10 +106,6 @@ FMT and ARGS are like arguments in `message'."
 
 
 ;;; Core
-
-(defvar raq-max-retry 3)
-
-(defvar raq-user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36")
 
 (defvar-local raq-stream-abort-flag nil
   "Non-nil means to ignore following stream progress in callback of http filter.")
