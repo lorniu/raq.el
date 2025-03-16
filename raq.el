@@ -34,9 +34,13 @@
 ;;  - Support config proxies for client
 ;;  - Support file upload/download
 ;;
-;; See README.md for more details.
+;; See README.md of https://github.com/lorniu/raq.el for more details.
 
 ;;; Code:
+
+(require 'cl-lib)
+(require 'url)
+(require 'eieio)
 
 (defgroup raq nil
   "HTTP Library Adapter."
