@@ -13,7 +13,7 @@ raq is an HTTP Library Adapter for Emacs. It support `url.el` and [plz.el](https
 
 Just download the `raq.el` and place it in your `load-path`.
 
-If you need request with `curl`, you should install `plz.el` first.
+If you need request with `curl`, please ensure program `curl` and package `plz` are available.
 
 ## Usage
 
@@ -23,10 +23,10 @@ Just request through `raq`, with or without specifying an http client:
 (raq (raq-plz-client) "https://httpbin.org/user-agent" ...)
 
 ;; If request with no http client specified, the request will be sent
-;; by client specified by `raq-default-client'.
+;; through client specified by `raq-default-client'.
 
-;; You can config it, or use the default one. By default it use
-;; `raq-plz-client` if possible then fallback to `raq-url-client`.
+;; You can config it. If not, it will use `(raq-plz-client)` if possible,
+;; then fallback to `(raq-url-client)` if `plz` is unavailable.
 (setq raq-default-client (raq-plz-client))
 (setq raq-default-client (raq-plz-client :args '("--proxy" "socks5://127.0.0.1:1080")))
 (setq raq-default-client
@@ -36,20 +36,20 @@ Just request through `raq`, with or without specifying an http client:
             (raq-plz-client))))
 ```
 
-Then try to send request like this:
+Then try to send requests like this:
 ``` emacs-lisp
 ;; By default, sync, get
 (raq "https://httpbin.org/user-agent")
 
 ;; Use :headers keyword to supply data sent in http header
 ;; Use :data keyword to supply data sent in http body
-;; That is, if :data is present, the :method 'post can be ignored
+;; If :data is present, the :method 'post can be ignored
 (raq "https://httpbin.org/post"
      :headers '(("Content-Type" . "application/json"))
      :data '(("key" . "value")) ; or string "key=value&..." directly
      :method 'post)
 
-;; If :done present, then it will be request asynchronously
+;; If :done present, then it will request asynchronously
 (raq "https://httpbin.org/post"
      :headers '(("Content-Type" . "application/json"))
      :data '(("key" . "value"))
@@ -62,7 +62,7 @@ Then try to send request like this:
      :done (lambda (res) (tooltip-show res))
      :fail (lambda (err) (message "FAIL")))
 
-;; Add :retry to auto resend the request if timeout (available for async only)
+;; Add :retry to auto resend the request if timeout (for async only)
 (raq "https://httpbin.org/post"
      :headers '(("Content-Type" . "application/json"))
      :data '(("key" . "value"))
@@ -70,7 +70,7 @@ Then try to send request like this:
      :fail (lambda (err) (message "FAIL"))
      :retry 3)
 
-;; Use :filter to contain logic every chunk back (stream)
+;; Use :filter to provide logic as every chunk back (for stream feature)
 (raq "https://httpbin.org/post"
      :headers '(("Content-Type" . "application/json"))
      :data '(("key" . "value"))
@@ -83,7 +83,7 @@ Then try to send request like this:
 (raq "https://httpbin.org/patch" :method 'patch)
 (raq "https://httpbin.org/delete" :method 'delete)
 
-;; Upload, notice the syntax: not (a . path), just (a path) for file
+;; Upload. Notice the syntax: for file, not (a . path), just (a path)
 (raq "https://httpbin.org/post"
      :data '((key1 . "value") (key2 "~/aaa.jpeg")))
 
