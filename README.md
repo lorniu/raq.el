@@ -38,10 +38,13 @@ Just request through `raq`, with or without specifying an http client:
       (lambda (_ method) (if (eq method 'patch) (raq-url-client) (raq-plz-client))))
 ```
 
-Then try to send requests like this:
+And try to send requests like this:
 ``` emacs-lisp
 ;; By default, sync, get
-(raq "https://httpbin.org/user-agent")
+(message "%s" (raq "https://httpbin.org/user-agent"))
+
+;; If :done is present and without :sync t, the request will be async
+(raq "https://httpbin.org/user-agent" :done (lambda (r) (message "%s" r)))
 
 ;; Use :headers keyword to supply data sent in http header
 ;; Use :data keyword to supply data sent in http body
@@ -79,6 +82,16 @@ Then try to send requests like this:
      :filter (lambda () (message "%s" (buffer-size)))
      :done (lambda (res) (tooltip-show res))
      :fail (lambda (err) (message "FAIL")))
+
+;; Arguments of :done are smart, it can be one, two, three or four
+(raq "https://httpbin.org/user-agent"
+     :done (lambda (body) (message "%s" body)))
+(raq "https://httpbin.org/user-agent"
+     :done (lambda (_body headers) (message "%s" headers)))
+(raq "https://httpbin.org/user-agent"
+     :done (lambda (_body _headers status-code) (message "%s" status-code)))
+(raq "https://httpbin.org/user-agent"
+     :done (lambda (_body _headers _code http-version) (message "%s" http-version)))
 
 ;; Specific method
 (raq "https://httpbin.org/uuid")

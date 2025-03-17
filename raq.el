@@ -108,6 +108,11 @@ FMT and ARGS are arguments same as function `message'."
              else do (insert newline "--" raq-multipart-boundary "--"))
     (buffer-substring-no-properties (point-min) (point-max))))
 
+(defun raq-funcall (fn args)
+  "Funcall FN and pass some of ARGS to it according its arity."
+  (let ((n (car (func-arity fn))))
+    (apply fn (cl-loop for i from 1 to n for x in args collect x))))
+
 
 ;;; Core
 
@@ -179,9 +184,11 @@ If request async, return the process behind the request."
                                        (setq raq-stream-abort-flag t)
                                        (if raq-debug (raq-log tag "Error in filter: (%s) %s" url err))
                                        (funcall failfn err)))))))
-                    (donefn (lambda (raw)
-                              (if raq-debug (raq-log tag "✓ %s" url))
-                              (when done (funcall done raw)))))
+                    (dargs (cl-loop for i from 1 to (car (func-arity done))
+                                    collect (intern (format "a%d" i))))
+                    (donefn `(lambda (,@dargs)
+                               (if raq-debug (raq-log ,tag "✓ %s" ,url))
+                               (when ,done (funcall ,done ,@dargs)))))
                (apply #'cl-call-next-method client url `(:fail ,failfn :filter ,filterfn :done ,donefn ,@args))))))
 
 
@@ -198,6 +205,8 @@ If request async, return the process behind the request."
 (defvar url-http-content-type)
 (defvar url-http-end-of-headers)
 (defvar url-http-transfer-encoding)
+(defvar url-http-response-status)
+(defvar url-http-response-version)
 
 (defvar raq-url-extra-filter nil)
 
@@ -235,7 +244,14 @@ SYNC and RETRY and more."
          (url-mime-encoding-string "identity")
          (get-resp-content (lambda ()
                              (set-buffer-multibyte (not (raq-http-binary-p url-http-content-type)))
-                             (buffer-substring-no-properties (min (1+ url-http-end-of-headers) (point-max)) (point-max)))))
+                             (list (buffer-substring-no-properties
+                                    (min (1+ url-http-end-of-headers) (point-max)) (point-max))
+                                   (save-excursion
+                                     (goto-char (point-min))
+                                     (forward-line 1)
+                                     (mail-header-extract))
+                                   url-http-response-status
+                                   url-http-response-version))))
     (when raq-debug
       (raq-log tag "Proxy: %s" url-proxy-services)
       (raq-log tag "User Agent: %s" url-user-agent)
@@ -250,7 +266,8 @@ SYNC and RETRY and more."
               (let ((buf (url-retrieve-synchronously url nil t)))
                 (unwind-protect
                     (with-current-buffer buf
-                      (let ((s (funcall get-resp-content))) (if done (funcall done s) s)))
+                      (let ((s (funcall get-resp-content)))
+                        (if done (raq-funcall done s) (car s))))
                   (ignore-errors (kill-buffer buf))))
             (error (if fail (funcall fail err) (signal 'user-error (cdr err)))))
         ;; async
@@ -263,7 +280,8 @@ SYNC and RETRY and more."
                                                             (when (or (null url-http-end-of-headers) (= 1 (point-max)))
                                                               (list 'empty-response "Nothing response from server")))))
                                              (if fail (funcall fail err) (signal 'user-error err))
-                                           (if done (funcall done (funcall get-resp-content))))
+                                           (when done
+                                             (raq-funcall done (funcall get-resp-content))))
                                        (kill-buffer cb))))
                                  nil t)))
           (when (and filter (buffer-live-p buf))
@@ -285,6 +303,7 @@ SYNC and RETRY and more."
 (defvar plz-curl-program)
 (defvar plz-curl-default-args)
 (defvar plz-http-end-of-headers-regexp)
+(defvar plz-http-response-status-line-regexp)
 
 (declare-function plz "ext:plz.el" t t)
 (declare-function plz-error-message "ext:plz.el" t t)
@@ -292,6 +311,7 @@ SYNC and RETRY and more."
 (declare-function plz-error-response "ext:plz.el" t t)
 (declare-function plz-response-status "ext:plz.el" t t)
 (declare-function plz-response-body "ext:plz.el" t t)
+(declare-function plz--headers "ext:plz.el" t t)
 (declare-function plz--narrow-to-body "ext:plz.el" t t)
 
 (defvar raq-plz-initialize-error-message
@@ -323,13 +343,21 @@ SYNC and RETRY and more."
                         data))
          (string-or-binary (lambda () ; decode according content-type. there is no builtin way to do this in plz
                              (widen)
-                             (let* ((content-type (mail-fetch-field "content-type"))
+                             (goto-char (point-min))
+                             (unless (looking-at plz-http-response-status-line-regexp)
+                               (signal 'plz-http-error
+                                       (list "plz--response: Unable to parse HTTP response status line"
+                                             (buffer-substring (point) (line-end-position)))))
+                             (let* ((http-version (string-to-number (match-string 1)))
+                                    (status-code (string-to-number (match-string 2)))
+                                    (headers (plz--headers))
+                                    (content-type (alist-get 'content-type headers))
                                     (binaryp (raq-http-binary-p content-type)))
                                (set-buffer-multibyte (not binaryp))
                                (goto-char (point-min))
                                (plz--narrow-to-body)
                                (unless binaryp (decode-coding-region (point-min) (point-max) 'utf-8))
-                               (buffer-string)))))
+                               (list (buffer-string) headers status-code http-version)))))
     ;; headers
     (when formdatap
       (setf (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case)
@@ -352,7 +380,7 @@ SYNC and RETRY and more."
                        :decode nil
                        :as string-or-binary
                        :then 'sync)))
-              (if done (funcall done r) r))
+              (if done (raq-funcall done r) (car r)))
           (error (if fail (funcall fail err)
                    (signal 'user-error (cdr err)))))
       ;; async
@@ -373,8 +401,8 @@ SYNC and RETRY and more."
                           (save-restriction
                             (narrow-to-region (point) (point-max))
                             (funcall filter)))))))
-        :then (lambda (raw)
-                (when done (funcall done raw)))
+        :then (lambda (res)
+                (when done (raq-funcall done res)))
         :else (lambda (err)
                 (let ((ret ;; try to compatible with error object of url.el, see `url-retrieve' for details
                        (or (plz-error-message err)
