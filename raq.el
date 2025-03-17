@@ -397,18 +397,29 @@ SYNC and RETRY and more."
     (raq-url-client))
   "Client used by `raq' by default.
 This should be instance of symbol `raq-client', or a function with current
-host as argument that return an instance.  If is a function, the client be
-used will be determined dynamically when the `raq' be called.")
+url or url+method as arguments that return an instance.  If is a function,
+the client be used will be determined dynamically when the `raq' be called.")
+
+(defun raq-ensure-default-client (args)
+  "Pursue the value of variable `raq-default-client' if it is a function.
+ARGS should be the arguments of function `raq'."
+  (if (functionp raq-default-client)
+      (pcase (car (func-arity raq-default-client))
+        (1 (funcall raq-default-client (car args)))
+        (2 (funcall raq-default-client (car args)
+                    (intern-soft
+                     (or (plist-get (cdr args) :method)
+                         (if (plist-get (cdr args) :data) 'post 'get)))))
+        (_ (user-error "If `raq-default-client' is a function, it can only have
+one argument (url) or two arguments (url method)")))
+    raq-default-client))
 
 ;;;###autoload
 (cl-defmethod raq (&rest args)
   "Send a request with `raq-default-client'.
 In this case, the first argument in ARGS should be url instead of client.
 See the generic method for other ARGS and details."
-  (let ((client (if (functionp raq-default-client)
-                    (funcall raq-default-client
-                             (url-host (url-generic-parse-url (car args))))
-                  raq-default-client)))
+  (let ((client (raq-ensure-default-client args)))
     (unless (and client (eieio-object-p client) (object-of-class-p client 'raq-client))
       (user-error "Make sure `raq-default-client' is available.  eg:\n\n(setq raq-default (raq-url))\n\n\n"))
     (apply #'raq client args)))

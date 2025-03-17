@@ -30,10 +30,12 @@ Just request through `raq`, with or without specifying an http client:
 (setq raq-default-client (raq-plz-client))
 (setq raq-default-client (raq-plz-client :args '("--proxy" "socks5://127.0.0.1:1080")))
 (setq raq-default-client
-        (lambda (host)
-          (if (string-match-p "deepl" host)
+        (lambda (url)
+          (if (string-match-p "deepl.com/" url)
               (raq-plz-client :args '("--proxy" "socks5://127.0.0.1:1080"))
             (raq-plz-client))))
+(setq raq-default-client
+      (lambda (_ method) (if (eq method 'patch) (raq-url-client) (raq-plz-client))))
 ```
 
 Then try to send requests like this:
