@@ -41,6 +41,7 @@
 (require 'cl-lib)
 (require 'url)
 (require 'eieio)
+(require 'help)
 
 (defgroup raq nil
   "HTTP Library Adapter."
@@ -163,6 +164,7 @@ If request async, return the process behind the request."
            (if sync (apply #'cl-call-next-method client url args)
              ;; async
              (let* ((tag (eieio-object-class client))
+                    (buf (current-buffer))
                     (failfn (lambda (status)
                               ;; retry for timeout
                               (unless retry (setq retry raq-max-retry))
@@ -172,7 +174,9 @@ If request async, return the process behind the request."
                                     (apply #'raq client url `(:retry ,(1- retry) ,@args)))
                                 ;; failed finally
                                 (if raq-debug (raq-log tag "REQUEST FAILED: (%s) %s" url status))
-                                (if fail (funcall fail status)
+                                (if fail
+                                    (with-current-buffer (if (buffer-live-p buf) buf (current-buffer))
+                                      (funcall fail status))
                                   (signal (car status) (cdr status))))))
                     (filterfn (when filter
                                 (lambda ()
@@ -184,11 +188,16 @@ If request async, return the process behind the request."
                                        (setq raq-stream-abort-flag t)
                                        (if raq-debug (raq-log tag "Error in filter: (%s) %s" url err))
                                        (funcall failfn err)))))))
-                    (dargs (cl-loop for i from 1 to (car (func-arity done))
-                                    collect (intern (format "a%d" i))))
-                    (donefn `(lambda (,@dargs)
-                               (if raq-debug (raq-log ,tag "✓ %s" ,url))
-                               (when ,done (funcall ,done ,@dargs)))))
+                    (arglst (cl-loop for arg in (if (equal (func-arity done) '(0 . many)) '(a1)
+                                                  (help-function-arglist done))
+                                     until (memq arg '(&rest &optional &key))
+                                     collect arg))
+                    (donefn (if (> (length arglst) 4)
+                                (user-error "Function :done has invalid arguments")
+                              `(lambda ,arglst
+                                 (if raq-debug (raq-log ,tag "Done!"))
+                                 (with-current-buffer (if (buffer-live-p ,buf) ,buf (current-buffer))
+                                   (,done ,@arglst))))))
                (apply #'cl-call-next-method client url `(:fail ,failfn :filter ,filterfn :done ,donefn ,@args))))))
 
 
