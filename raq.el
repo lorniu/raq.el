@@ -56,7 +56,7 @@
   "Default user agent used by request."
   :type 'string)
 
-(defcustom raq-max-retry 3
+(defcustom raq-max-retry 1
   "Default retry times when request timeout."
   :type 'integer)
 
@@ -238,8 +238,9 @@ SYNC and RETRY and more."
          (url-user-agent (or (oref client user-agent) raq-user-agent))
          (url-proxy-services (or (oref client proxy-services) url-proxy-services))
          (formdatap (and (consp data)
-                         (or (string-match-p "multipart/formdata"
-                                             (or (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case) ""))
+                         (or (string-match-p
+                              "multipart/formdata"
+                              (or (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case) ""))
                              (cl-some (lambda (x) (consp (cdr x))) data))))
          (url-request-data (funcall (if (atom data) #'identity ; string
                                       (if formdatap #'raq-format-formdata #'raq-format-params)) ; alist
@@ -262,42 +263,43 @@ SYNC and RETRY and more."
                                    url-http-response-status
                                    url-http-response-version))))
     (when raq-debug
-      (raq-log tag "Proxy: %s" url-proxy-services)
-      (raq-log tag "User Agent: %s" url-user-agent)
-      (raq-log tag "MIME Encoding: %s" url-mime-encoding-string)
       (raq-log tag "%s %s" url-request-method url)
       (raq-log tag "HEADER: %S" url-request-extra-headers)
-      (raq-log tag "DATA: %s" url-request-data))
-    (let ((inhibit-message t) (message-log-max nil))
-      ;; sync
-      (if sync
-          (condition-case err
-              (let ((buf (url-retrieve-synchronously url nil t)))
-                (unwind-protect
-                    (with-current-buffer buf
-                      (let ((s (funcall get-resp-content)))
-                        (if done (raq-funcall done s) (car s))))
-                  (ignore-errors (kill-buffer buf))))
-            (error (if fail (funcall fail err) (signal 'user-error (cdr err)))))
-        ;; async
-        (let ((buf (url-retrieve url
-                                 (lambda (status)
-                                   (let ((cb (current-buffer)))
-                                     (remove-hook 'after-change-functions #'raq-url-http-extra-filter t)
-                                     (unwind-protect
-                                         (if-let* ((err (or (cdr-safe (plist-get status :error))
-                                                            (when (or (null url-http-end-of-headers) (= 1 (point-max)))
-                                                              (list 'empty-response "Nothing response from server")))))
-                                             (if fail (funcall fail err) (signal 'user-error err))
-                                           (when done
-                                             (raq-funcall done (funcall get-resp-content))))
-                                       (kill-buffer cb))))
-                                 nil t)))
-          (when (and filter (buffer-live-p buf))
-            (with-current-buffer buf
-              (setq-local raq-url-extra-filter filter)
-              (add-hook 'after-change-functions #'raq-url-http-extra-filter nil t)))
-          (get-buffer-process buf))))))
+      (raq-log tag "DATA: %s" url-request-data)
+      (raq-log tag "Proxy: %s" url-proxy-services)
+      (raq-log tag "User Agent: %s" url-user-agent)
+      (raq-log tag "MIME Encoding: %s" url-mime-encoding-string))
+    ;; sync
+    (if sync
+        (condition-case err
+            (let ((buf (url-retrieve-synchronously url t)))
+              (unwind-protect
+                  (with-current-buffer buf
+                    (let ((s (funcall get-resp-content)))
+                      (if done (raq-funcall done s) (car s))))
+                (ignore-errors (kill-buffer buf))))
+          (error (if fail (funcall fail err)
+                   (signal 'user-error (cdr err)))))
+      ;; async
+      (let ((buf (url-retrieve url
+                               (lambda (status)
+                                 (let ((cb (current-buffer)))
+                                   (remove-hook 'after-change-functions #'raq-url-http-extra-filter t)
+                                   (unwind-protect
+                                       (if-let* ((err (or (cdr-safe (plist-get status :error))
+                                                          (when (or (null url-http-end-of-headers) (= 1 (point-max)))
+                                                            (list 'empty-response "Nothing response from server")))))
+                                           (if fail (funcall fail err)
+                                             (signal 'user-error err))
+                                         (when done
+                                           (raq-funcall done (funcall get-resp-content))))
+                                     (kill-buffer cb))))
+                               nil t)))
+        (when (and filter (buffer-live-p buf))
+          (with-current-buffer buf
+            (setq-local raq-url-extra-filter filter)
+            (add-hook 'after-change-functions #'raq-url-http-extra-filter nil t)))
+        (get-buffer-process buf)))))
 
 
 ;;; Implement of plz.el
@@ -344,8 +346,9 @@ SYNC and RETRY and more."
                                     (append (oref client extra-args) plz-curl-default-args)
                                   plz-curl-default-args))
          (formdatap (and (consp data)
-                         (or (string-match-p "multipart/formdata"
-                                             (or (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case) ""))
+                         (or (string-match-p
+                              "multipart/formdata"
+                              (or (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case) ""))
                              (cl-some (lambda (x) (consp (cdr x))) data))))
          (data (funcall (if (atom data) #'identity ; string
                           (if formdatap #'raq-format-formdata #'raq-format-params)) ; alist
@@ -458,7 +461,8 @@ In this case, the first argument in ARGS should be url instead of client.
 See the generic method for other ARGS and details."
   (let ((client (raq-ensure-default-client args)))
     (unless (and client (eieio-object-p client) (object-of-class-p client 'raq-client))
-      (user-error "Make sure `raq-default-client' is available.  eg:\n\n(setq raq-default (raq-url))\n\n\n"))
+      (user-error "Make sure `raq-default-client' is available.  eg:\n
+(setq raq-default-client (raq-url-client))\n\n\n"))
     (apply #'raq client args)))
 
 (provide 'raq)

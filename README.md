@@ -29,22 +29,22 @@ Just request through `raq`, with or without specifying an http client:
 ;; then fallback to `(raq-url-client)` if `plz` is unavailable.
 (setq raq-default-client (raq-plz-client))
 (setq raq-default-client (raq-plz-client :args '("--proxy" "socks5://127.0.0.1:1080")))
+(setq raq-default-client (raq-url-client :proxies '(("http"  . "host:9999")
+                                                    ("https" . "host:9999"))))
 (setq raq-default-client
-        (lambda (url)
-          (if (string-match-p "deepl.com/" url)
-              (raq-plz-client :args '("--proxy" "socks5://127.0.0.1:1080"))
-            (raq-plz-client))))
+      (lambda (url)
+        (if (string-match-p "deepl.com/" url)
+            (raq-plz-client :args '("--proxy" "socks5://127.0.0.1:1080"))
+          (raq-plz-client))))
 (setq raq-default-client
-      (lambda (_ method) (if (eq method 'patch) (raq-url-client) (raq-plz-client))))
+      (lambda (_ method)
+        (if (eq method 'patch) (raq-url-client) (raq-plz-client))))
 ```
 
 And try to send requests like this:
 ``` emacs-lisp
 ;; By default, sync, get
 (message "%s" (raq "https://httpbin.org/user-agent"))
-
-;; If :done is present and without :sync t, the request will be async
-(raq "https://httpbin.org/user-agent" :done (lambda (r) (message "%s" r)))
 
 ;; Use :headers keyword to supply data sent in http header
 ;; Use :data keyword to supply data sent in http body
@@ -54,7 +54,7 @@ And try to send requests like this:
      :data '(("key" . "value")) ; or string "key=value&..." directly
      :method 'post)
 
-;; If :done present, then it will request asynchronously
+;; If :done is present and :sync t is absent, the request will be asynchronous!
 (raq "https://httpbin.org/post"
      :headers '(("Content-Type" . "application/json"))
      :data '(("key" . "value"))
@@ -67,7 +67,7 @@ And try to send requests like this:
      :done (lambda (res) (tooltip-show res))
      :fail (lambda (err) (message "FAIL")))
 
-;; Add :retry to auto resend the request if timeout (for async only)
+;; Use :retry to set times auto resend the request if timeout (for async only)
 (raq "https://httpbin.org/post"
      :headers '(("Content-Type" . "application/json"))
      :data '(("key" . "value"))
@@ -83,22 +83,19 @@ And try to send requests like this:
      :done (lambda (res) (tooltip-show res))
      :fail (lambda (err) (message "FAIL")))
 
-;; Arguments of :done are smart, it can be one, two, three or four
-(raq "https://httpbin.org/user-agent"
-     :done (lambda (body) (message "%s" body)))
-(raq "https://httpbin.org/user-agent"
-     :done (lambda (_body headers) (message "%s" headers)))
-(raq "https://httpbin.org/user-agent"
-     :done (lambda (_body _headers status-code) (message "%s" status-code)))
-(raq "https://httpbin.org/user-agent"
-     :done (lambda (_body _headers _code http-version) (message "%s" http-version)))
+;; Arguments of :done are smart, it can be zero, one, two, three or four
+(raq "https://httpbin.org/ip" :done (lambda () (message "bingo")))
+(raq "https://httpbin.org/ip" :done (lambda (body) (message "%s" body)))
+(raq "https://httpbin.org/ip" :done (lambda (_body headers) (message "%s" headers)))
+(raq "https://httpbin.org/ip" :done (lambda (_ _ status-code) (message "%s" status-code)))
+(raq "https://httpbin.org/ip" :done (lambda (_ _ _ http-version) (message "%s" http-version)))
 
 ;; Specific method
 (raq "https://httpbin.org/uuid")
 (raq "https://httpbin.org/patch" :method 'patch)
 (raq "https://httpbin.org/delete" :method 'delete)
 
-;; Upload. Notice the syntax: for file, not (a . path), just (a path)
+;; Upload. Notice the difference: for file, not (a . path), just (a path)
 (raq "https://httpbin.org/post"
      :data '((key1 . "value") (key2 "~/aaa.jpeg")))
 
