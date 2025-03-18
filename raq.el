@@ -168,8 +168,10 @@ If request async, return the process behind the request."
                     (failfn (lambda (status)
                               ;; retry for timeout
                               (unless retry (setq retry raq-max-retry))
-                              (if (and (string-match-p "Operation timeout" (format "%s" status)) (cl-plusp retry))
+                              (if (and (string-match-p "peration timeout" (format "%s" status)) (cl-plusp retry))
                                   (progn
+                                    (let ((inhibit-message t))
+                                      (message "Timeout, retrying (%d)..." retry))
                                     (if raq-debug (raq-log tag "Request timeout, retrying (remains %d times)..." retry))
                                     (apply #'raq client url `(:retry ,(1- retry) ,@args)))
                                 ;; failed finally
