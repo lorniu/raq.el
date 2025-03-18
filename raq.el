@@ -317,6 +317,7 @@ SYNC and RETRY and more."
 (defvar plz-http-response-status-line-regexp)
 
 (declare-function plz "ext:plz.el" t t)
+(declare-function plz-error-p "ext:plz.el" t t)
 (declare-function plz-error-message "ext:plz.el" t t)
 (declare-function plz-error-curl-error "ext:plz.el" t t)
 (declare-function plz-error-response "ext:plz.el" t t)
@@ -369,7 +370,23 @@ SYNC and RETRY and more."
                                (goto-char (point-min))
                                (plz--narrow-to-body)
                                (unless binaryp (decode-coding-region (point-min) (point-max) 'utf-8))
-                               (list (buffer-string) headers status-code http-version)))))
+                               (list (buffer-string) headers status-code http-version))))
+         (raise-error (lambda (err)
+                        (when (and (consp err) (memq (car err) '(plz-http-error plz-curl-error)))
+                          (setq err (caddr err)))
+                        (when (plz-error-p err)
+                          (setq err
+                                (or (plz-error-message err)
+                                    (when-let* ((curl (plz-error-curl-error err)))
+                                      (list 'curl-error
+                                            (concat (format "%s" (or (cdr curl) (car curl)))
+                                                    (pcase (car curl)
+                                                      (2 (when (memq system-type '(cygwin windows-nt ms-dos))
+                                                           raq-plz-initialize-error-message))))))
+                                    (when-let* ((resp (plz-error-response err)))
+                                      (list 'http (plz-response-status resp) (plz-response-body resp))))))
+                        (if fail (funcall fail err)
+                          (signal 'user-error (cdr err))))))
     ;; headers
     (when formdatap
       (setf (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case)
@@ -393,8 +410,7 @@ SYNC and RETRY and more."
                        :as string-or-binary
                        :then 'sync)))
               (if done (raq-funcall done r) (car r)))
-          (error (if fail (funcall fail err)
-                   (signal 'user-error (cdr err)))))
+          (error (funcall raise-error err)))
       ;; async
       (plz method url
         :headers headers
@@ -413,21 +429,8 @@ SYNC and RETRY and more."
                           (save-restriction
                             (narrow-to-region (point) (point-max))
                             (funcall filter)))))))
-        :then (lambda (res)
-                (when done (raq-funcall done res)))
-        :else (lambda (err)
-                (let ((ret ;; try to compatible with error object of url.el, see `url-retrieve' for details
-                       (or (plz-error-message err)
-                           (when-let* ((r (plz-error-curl-error err)))
-                             (list 'curl-error
-                                   (concat (format "%s" (or (cdr r) (car r)))
-                                           (pcase (car r)
-                                             (2 (when (memq system-type '(cygwin windows-nt ms-dos))
-                                                  raq-plz-initialize-error-message))))))
-                           (when-let* ((r (plz-error-response err)))
-                             (list 'http (plz-response-status r) (plz-response-body r))))))
-                  (if fail (funcall fail ret)
-                    (signal 'user-error ret))))))))
+        :then (lambda (res) (if done (raq-funcall done res)))
+        :else (lambda (err) (funcall raise-error err))))))
 
 
 
