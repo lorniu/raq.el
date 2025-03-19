@@ -142,6 +142,7 @@ Keyword arguments:
   - FILTER: A function to be called every time when some data returned.
   - DONE: A function to be called when the request succeeds.
   - FAIL: A function to be called when the request fails.
+  - ALWAYS: A function to be called whether done or fail.
   - RETRY: How many times it can retry for timeout. Number.
   - SYNC: Non-nil means request synchronized. Boolean.
 

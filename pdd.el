@@ -134,9 +134,45 @@ FMT and ARGS are arguments same as function `message'."
 When error occurrs and no :fail specified, this will perform as the handler.
 Besides globally set, it also can be dynamically binding in let.")
 
+(defvar pdd-default-config nil)
+
+;; config
+(defclass pdd-config ()
+  ((url)
+   (method)
+   (params)
+   (headers)
+   (data)
+   (base-url)
+   (timeout)
+   (done)
+   (fail)
+   (finally)
+   (request-interceptors)
+   (response-interceptors)
+   (param-serializer) ; param => string
+   (request-transformer) ; data, header => data, header
+   (response-transformer)
+   (timer)
+   (queue)) ; string => data
+  )
+
+(defun pdd-all (lst &key done fail))
+
+'(pdd-all
+ (mapcar
+  (lambda (name) (pdd (format "https://api.github.com/users/%s" name) :done #'identity))
+  '("jeresig" "iliakan" "remy"))
+ :done (lambda (lst) (cl-loop for i in lst do (message i)))
+ :fail (lambda (err) (message "error")))
+
+(defun pdd-any () )
+(defun pdd-race () )
+
 (defclass pdd-client ()
   ((insts :allocation :class :initform nil)
-   (user-agent :initarg :user-agent :initform nil :type (or string null)))
+   (user-agent :initarg :user-agent :initform nil :type (or string null))
+   (config))
   "Used to send http request."
   :abstract t)
 
@@ -149,7 +185,7 @@ Besides globally set, it also can be dynamically binding in let.")
     (let ((inst (cl-call-next-method)))
       (prog1 inst (oset-default class insts `((,key . ,inst) ,@insts))))))
 
-(cl-defgeneric pdd (pdd-client url &rest _args &key method headers data filter done fail sync retry &allow-other-keys)
+(cl-defgeneric pdd (pdd-client url &rest _args &key method headers data filter done fail always sync retry &allow-other-keys)
   "Send HTTP request using the given PDD-CLIENT.
 
 Keyword arguments:
@@ -165,11 +201,16 @@ Keyword arguments:
   - FILTER: A function to be called every time when some data returned.
   - DONE: A function to be called when the request succeeds.
   - FAIL: A function to be called when the request fails.
+  - ALWAYS: A function to be called whether done or fail.
   - RETRY: How many times it can retry for timeout.  Number.
   - SYNC: Non-nil means request synchronized.  Boolean.
 
 If request async, return the process behind the request."
   (:method :around ((client pdd-client) url &rest args &key method _headers data filter done fail sync retry)
+           ;; keyword :done can be ignored
+           (when (functionp (car args))
+             (push :done args)
+             (setq done (car args)))
            ;; normalize and validate
            (if (and (null filter) (null done)) (setq sync t args `(:sync t ,@args)))
            (cl-assert (and url (or (and sync (not filter)) (and (not sync) (or filter done)))))
@@ -477,6 +518,16 @@ ARGS should be the arguments of function `pdd'."
 one argument (url) or two arguments (url method)")))
     pdd-default-client))
 
+(defun pdd-fill-keywords-for-args (args)
+  "If keywords :done or :data omitted in ARGS, complete them."
+  (unless (keywordp (cadr args))
+    (if (functionp (cadr args))
+        (push :done (cdr args))
+      (when (functionp (caddr args))
+        (push :done (cddr args)))
+      (push :data (cdr args))))
+  args)
+
 ;;;###autoload
 (cl-defmethod pdd (&rest args)
   "Send a request with `pdd-default-client'.
@@ -486,7 +537,7 @@ See the generic method for other ARGS and details."
     (unless (and client (eieio-object-p client) (object-of-class-p client 'pdd-client))
       (user-error "Make sure `pdd-default-client' is available.  eg:\n
 (setq pdd-default-client (pdd-url-client))\n\n\n"))
-    (apply #'pdd client args)))
+    (apply #'pdd client (pdd-fill-keywords-for-args args))))
 
 (provide 'pdd)
 
