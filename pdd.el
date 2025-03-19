@@ -129,6 +129,11 @@ FMT and ARGS are arguments same as function `message'."
 (defvar-local pdd-stream-abort-flag nil
   "Non-nil means to ignore following stream progress in callback of http filter.")
 
+(defvar pdd-default-error-handler nil
+  "The default error handler which is a function with current error as argument.
+When error occurrs and no :fail specified, this will perform as the handler.
+Besides globally set, it also can be dynamically binding in let.")
+
 (defclass pdd-client ()
   ((insts :allocation :class :initform nil)
    (user-agent :initarg :user-agent :initform nil :type (or string null)))
@@ -174,6 +179,7 @@ If request async, return the process behind the request."
              ;; async
              (let* ((tag (eieio-object-class client))
                     (buf (current-buffer))
+                    (handler pdd-default-error-handler)
                     (failfn (lambda (status)
                               ;; retry for timeout
                               (unless retry (setq retry pdd-max-retry))
@@ -185,10 +191,10 @@ If request async, return the process behind the request."
                                     (apply #'pdd client url `(:retry ,(1- retry) ,@args)))
                                 ;; failed finally
                                 (if pdd-debug (pdd-log tag "REQUEST FAILED: (%s) %s" url status))
-                                (if fail
-                                    (with-current-buffer (if (buffer-live-p buf) buf (current-buffer))
-                                      (funcall fail status))
-                                  (signal (car status) (cdr status))))))
+                                (with-current-buffer (if (buffer-live-p buf) buf (current-buffer))
+                                  (if fail (funcall fail status)
+                                    (if handler (funcall handler status)
+                                      (print status)))))))
                     (filterfn (when filter
                                 (lambda ()
                                   ;; abort action and error case
@@ -247,6 +253,7 @@ See the generic method for args URL, METHOD, HEADERS, DATA, FILTER, DONE, FAIL,
 SYNC and RETRY and more."
   (ignore retry)
   (let* ((tag (eieio-object-class client))
+         (handler pdd-default-error-handler)
          (url-user-agent (or (oref client user-agent) pdd-user-agent))
          (url-proxy-services (or (oref client proxy-services) url-proxy-services))
          (formdatap (and (consp data)
@@ -288,7 +295,8 @@ SYNC and RETRY and more."
                       (if done (pdd-funcall done s) (car s))))
                 (ignore-errors (kill-buffer buf))))
           (error (if fail (funcall fail err)
-                   (signal 'user-error (cdr err)))))
+                   (if handler (funcall handler err)
+                     (signal 'user-error (cdr err))))))
       ;; async
       (let ((buf (url-retrieve url
                                (lambda (status)
@@ -299,7 +307,8 @@ SYNC and RETRY and more."
                                                           (when (or (null url-http-end-of-headers) (= 1 (point-max)))
                                                             (list 'empty-response "Nothing response from server")))))
                                            (if fail (funcall fail err)
-                                             (signal 'user-error err))
+                                             (if handler (funcall handler err)
+                                               (signal 'user-error err)))
                                          (when done
                                            (pdd-funcall done (funcall get-resp-content))))
                                      (kill-buffer cb))))
@@ -350,6 +359,7 @@ See the generic method for args URL, METHOD, HEADERS, DATA, FILTER, DONE, FAIL,
 SYNC and RETRY and more."
   (ignore retry)
   (let* ((tag (eieio-object-class client))
+         (handler pdd-default-error-handler)
          (plz-curl-default-args (if (slot-boundp client 'extra-args)
                                     (append (oref client extra-args) plz-curl-default-args)
                                   plz-curl-default-args))
@@ -395,7 +405,8 @@ SYNC and RETRY and more."
                                     (when-let* ((resp (plz-error-response err)))
                                       (list 'http (plz-response-status resp) (plz-response-body resp))))))
                         (if fail (funcall fail err)
-                          (signal 'user-error (cdr err))))))
+                          (if handler (funcall handler err)
+                            (signal 'user-error (cdr err)))))))
     ;; headers
     (when formdatap
       (setf (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case)

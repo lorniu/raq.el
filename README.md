@@ -55,38 +55,47 @@ And try to send requests like this:
 ;; Use :data keyword to supply data sent in http body
 ;; If :data is present, the :method 'post can be ignored
 (pdd "https://httpbin.org/post"
-     :headers '(("Content-Type" . "application/json"))
-     :data '(("key" . "value")) ; or string "key=value&..." directly
-     :method 'post)
+  :headers '(("Content-Type" . "application/json"))
+  :data '(("key" . "value")) ; or string "key=value&..." directly
+  :method 'post)
 
 ;; If :done is present and :sync t is absent, the request will be asynchronous!
 (pdd "https://httpbin.org/post"
-     :headers '(("Content-Type" . "application/json"))
-     :data '(("key" . "value"))
-     :done (lambda (res) (tooltip-show res)))
+  :headers '(("Content-Type" . "application/json"))
+  :data '(("key" . "value"))
+  :done (lambda (res) (tooltip-show res)))
 
 ;; And with :fail to catch the error
 (pdd "https://httpbin.org/post"
-     :headers '(("Content-Type" . "application/json"))
-     :data '(("key" . "value"))
-     :done (lambda (res) (tooltip-show res))
-     :fail (lambda (err) (message "FAIL")))
+  :headers '(("Content-Type" . "application/json"))
+  :data '(("key" . "value"))
+  :done (lambda (res) (tooltip-show res))
+  :fail (lambda (err) (message "FAIL")))
+
+;; Use `pdd-default-error-handler' to catch error when :fail is absent
+;; Set its value globally, or just dynamically bind it with let
+(let ((pdd-default-error-handler
+       (lambda (err) (message "Crying %s..." (cadr err)))))
+  (pdd "https://httpbin.org/post-error"
+    :headers '(("Content-Type" . "application/json"))
+    :data '(("key" . "value"))
+    :done (lambda (res) (tooltip-show res))))
 
 ;; Use :retry to set times auto resend the request if timeout (for async only)
 (pdd "https://httpbin.org/post"
-     :headers '(("Content-Type" . "application/json"))
-     :data '(("key" . "value"))
-     :done (lambda (res) (tooltip-show res))
-     :fail (lambda (err) (message "FAIL"))
-     :retry 3)
+  :headers '(("Content-Type" . "application/json"))
+  :data '(("key" . "value"))
+  :done (lambda (res) (tooltip-show res))
+  :fail (lambda (err) (message "FAIL"))
+  :retry 3)
 
 ;; Use :filter to provide logic as every chunk back (for stream feature)
 (pdd "https://httpbin.org/post"
-     :headers '(("Content-Type" . "application/json"))
-     :data '(("key" . "value"))
-     :filter (lambda () (message "%s" (buffer-size)))
-     :done (lambda (res) (tooltip-show res))
-     :fail (lambda (err) (message "FAIL")))
+  :headers '(("Content-Type" . "application/json"))
+  :data '(("key" . "value"))
+  :filter (lambda () (message "%s" (buffer-size)))
+  :done (lambda (res) (tooltip-show res))
+  :fail (lambda (err) (message "FAIL")))
 
 ;; Arguments of :done are smart, it can be zero, one, two, three or four
 (pdd "https://httpbin.org/ip" :done (lambda () (message "bingo")))
@@ -103,10 +112,10 @@ And try to send requests like this:
 ;; Upload. Notice the difference: for file, not (a . path), but a list
 ;; like (name path) or (name path mime-type)
 (pdd "https://httpbin.org/post"
-     :data '((key1 . "hello")
-             (key2 . "world")
-             (file1 "~/aaa.xxx")
-             (file2 "~/aaa.png" "image/png")))
+  :data '((key1 . "hello")
+          (key2 . "world")
+          (file1 "~/aaa.xxx")
+          (file2 "~/aaa.png" "image/png")))
 
 ;; Download
 (with-temp-file "~/aaa.jpeg"
