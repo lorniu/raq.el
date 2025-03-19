@@ -1,9 +1,9 @@
-;;; raq.el --- HTTP Library Adapter, support url, plz and more -*- lexical-binding: t -*-
+;;; pdd.el --- HTTP Library Adapter, support url, plz and more -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2025 lorniu <lorniu@gmail.com>
 
 ;; Author: lorniu <lorniu@gmail.com>
-;; URL: https://github.com/lorniu/raq.el
+;; URL: https://github.com/lorniu/pdd.el
 ;; License: GPL-3.0-or-later
 ;; Package-Requires: ((emacs "29.1"))
 ;; Version: 0.1
@@ -34,7 +34,7 @@
 ;;  - Support config proxies for client
 ;;  - Support file upload/download
 ;;
-;; See README.md of https://github.com/lorniu/raq.el for more details.
+;; See README.md of https://github.com/lorniu/pdd.el for more details.
 
 ;;; Code:
 
@@ -43,34 +43,34 @@
 (require 'eieio)
 (require 'help)
 
-(defgroup raq nil
+(defgroup pdd nil
   "HTTP Library Adapter."
   :group 'network
-  :prefix 'raq-)
+  :prefix 'pdd-)
 
-(defcustom raq-debug nil
+(defcustom pdd-debug nil
   "Debug flag."
   :type 'boolean)
 
-(defcustom raq-user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36"
+(defcustom pdd-user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36"
   "Default user agent used by request."
   :type 'string)
 
-(defcustom raq-max-retry 1
+(defcustom pdd-max-retry 1
   "Default retry times when request timeout."
   :type 'integer)
 
-(defcustom raq-multipart-boundary "raq-boundary-=-=+O0o0O69Oo"
+(defcustom pdd-multipart-boundary "pdd-boundary-=-=+O0o0O69Oo"
   "A string used as multipart boundary."
   :type 'string)
 
-(defun raq-log (tag fmt &rest args)
+(defun pdd-log (tag fmt &rest args)
   "Output log to *Messages* buffer.
 TAG usually is the name of current http client.
 FMT and ARGS are arguments same as function `message'."
-  (apply #'message (format "[%s] %s" (or tag "raq") fmt) args))
+  (apply #'message (format "[%s] %s" (or tag "pdd") fmt) args))
 
-(defun raq-binary-type-p (content-type)
+(defun pdd-binary-type-p (content-type)
   "Check if current CONTENT-TYPE is binary."
   (when content-type
     (cl-destructuring-bind (mime sub) (string-split content-type "/" nil "[ \n\r\t]")
@@ -78,7 +78,7 @@ FMT and ARGS are arguments same as function `message'."
                (and (equal mime "application")
                     (string-match-p "json\\|xml\\|php" sub)))))))
 
-(defun raq-format-params (alist)
+(defun pdd-format-params (alist)
   "Format ALIST to k=v style query string."
   (mapconcat (lambda (arg)
                (format "%s=%s"
@@ -86,7 +86,7 @@ FMT and ARGS are arguments same as function `message'."
                        (url-hexify-string (format "%s" (or (cdr arg) 1)))))
              (delq nil alist) "&"))
 
-(defun raq-format-formdata (alist)
+(defun pdd-format-formdata (alist)
   "Generate multipart/formdata string from ALIST."
   (with-temp-buffer
     (set-buffer-multibyte nil)
@@ -98,7 +98,7 @@ FMT and ARGS are arguments same as function `message'."
                           value (format "%s" (car value)) filep t)
                   (setq value (format "%s" value)))
              for newline = "\r\n"
-             do (insert "--" raq-multipart-boundary newline)
+             do (insert "--" pdd-multipart-boundary newline)
              if filep do (let ((fn (url-encode-url (url-file-nondirectory value))))
                            (insert "Content-Disposition: form-data; name=\"" key "\" filename=\"" fn "\"" newline)
                            (insert "Content-Type: " contentype newline newline)
@@ -106,10 +106,10 @@ FMT and ARGS are arguments same as function `message'."
                            (goto-char (point-max)))
              else do (insert "Content-Disposition: form-data; name=\"" key "\"" newline newline value)
              if (< i (length alist)) do (insert newline)
-             else do (insert newline "--" raq-multipart-boundary "--"))
+             else do (insert newline "--" pdd-multipart-boundary "--"))
     (buffer-substring-no-properties (point-min) (point-max))))
 
-(defun raq-extract-http-headers ()
+(defun pdd-extract-http-headers ()
   "Extract http headers from the current responsed buffer."
   (save-excursion
     (goto-char (point-min))
@@ -118,7 +118,7 @@ FMT and ARGS are arguments same as function `message'."
               (cons (car elt) (string-trim (cdr elt))))
             (mail-header-extract))))
 
-(defun raq-funcall (fn args)
+(defun pdd-funcall (fn args)
   "Funcall FN and pass some of ARGS to it according its arity."
   (let ((n (car (func-arity fn))))
     (apply fn (cl-loop for i from 1 to n for x in args collect x))))
@@ -126,16 +126,16 @@ FMT and ARGS are arguments same as function `message'."
 
 ;;; Core
 
-(defvar-local raq-stream-abort-flag nil
+(defvar-local pdd-stream-abort-flag nil
   "Non-nil means to ignore following stream progress in callback of http filter.")
 
-(defclass raq-client ()
+(defclass pdd-client ()
   ((insts :allocation :class :initform nil)
    (user-agent :initarg :user-agent :initform nil :type (or string null)))
   "Used to send http request."
   :abstract t)
 
-(cl-defmethod make-instance ((class (subclass raq-client)) &rest slots)
+(cl-defmethod make-instance ((class (subclass pdd-client)) &rest slots)
   "Ensure CLASS with same SLOTS only has one instance."
   (if-let* ((key (sha1 (format "%s" slots)))
             (insts (oref-default class insts))
@@ -144,8 +144,8 @@ FMT and ARGS are arguments same as function `message'."
     (let ((inst (cl-call-next-method)))
       (prog1 inst (oset-default class insts `((,key . ,inst) ,@insts))))))
 
-(cl-defgeneric raq (raq-client url &rest _args &key method headers data filter done fail sync retry &allow-other-keys)
-  "Send HTTP request using the given RAQ-CLIENT.
+(cl-defgeneric pdd (pdd-client url &rest _args &key method headers data filter done fail sync retry &allow-other-keys)
+  "Send HTTP request using the given PDD-CLIENT.
 
 Keyword arguments:
   - URL: The URL to send the request to.
@@ -164,7 +164,7 @@ Keyword arguments:
   - SYNC: Non-nil means request synchronized.  Boolean.
 
 If request async, return the process behind the request."
-  (:method :around ((client raq-client) url &rest args &key method _headers data filter done fail sync retry)
+  (:method :around ((client pdd-client) url &rest args &key method _headers data filter done fail sync retry)
            ;; normalize and validate
            (if (and (null filter) (null done)) (setq sync t args `(:sync t ,@args)))
            (cl-assert (and url (or (and sync (not filter)) (and (not sync) (or filter done)))))
@@ -176,15 +176,15 @@ If request async, return the process behind the request."
                     (buf (current-buffer))
                     (failfn (lambda (status)
                               ;; retry for timeout
-                              (unless retry (setq retry raq-max-retry))
+                              (unless retry (setq retry pdd-max-retry))
                               (if (and (string-match-p "peration timeout" (format "%s" status)) (cl-plusp retry))
                                   (progn
                                     (let ((inhibit-message t))
                                       (message "Timeout, retrying (%d)..." retry))
-                                    (if raq-debug (raq-log tag "Request timeout, retrying (remains %d times)..." retry))
-                                    (apply #'raq client url `(:retry ,(1- retry) ,@args)))
+                                    (if pdd-debug (pdd-log tag "Request timeout, retrying (remains %d times)..." retry))
+                                    (apply #'pdd client url `(:retry ,(1- retry) ,@args)))
                                 ;; failed finally
-                                (if raq-debug (raq-log tag "REQUEST FAILED: (%s) %s" url status))
+                                (if pdd-debug (pdd-log tag "REQUEST FAILED: (%s) %s" url status))
                                 (if fail
                                     (with-current-buffer (if (buffer-live-p buf) buf (current-buffer))
                                       (funcall fail status))
@@ -192,12 +192,12 @@ If request async, return the process behind the request."
                     (filterfn (when filter
                                 (lambda ()
                                   ;; abort action and error case
-                                  (unless raq-stream-abort-flag
+                                  (unless pdd-stream-abort-flag
                                     (condition-case err
                                         (funcall filter)
                                       (error
-                                       (setq raq-stream-abort-flag t)
-                                       (if raq-debug (raq-log tag "Error in filter: (%s) %s" url err))
+                                       (setq pdd-stream-abort-flag t)
+                                       (if pdd-debug (pdd-log tag "Error in filter: (%s) %s" url err))
                                        (funcall failfn err)))))))
                     (arglst (cl-loop for arg in (if (equal (func-arity done) '(0 . many)) '(a1)
                                                   (help-function-arglist done))
@@ -206,15 +206,16 @@ If request async, return the process behind the request."
                     (donefn (if (> (length arglst) 4)
                                 (user-error "Function :done has invalid arguments")
                               `(lambda ,arglst
-                                 (if raq-debug (raq-log ,tag "Done!"))
+                                 (if pdd-debug (pdd-log ,tag "Done!"))
                                  (with-current-buffer (if (buffer-live-p ,buf) ,buf (current-buffer))
                                    (,done ,@arglst))))))
-               (apply #'cl-call-next-method client url `(:fail ,failfn :filter ,filterfn :done ,donefn ,@args))))))
+               (apply #'cl-call-next-method client url `(:fail ,failfn :filter ,filterfn :done ,donefn ,@args)))))
+  (declare (indent 1)))
 
 
 ;;; Implement of url.el
 
-(defclass raq-url-client (raq-client)
+(defclass pdd-url-client (pdd-client)
   ((proxy-services
     :initarg :proxies
     :initform nil
@@ -228,25 +229,25 @@ If request async, return the process behind the request."
 (defvar url-http-response-status)
 (defvar url-http-response-version)
 
-(defvar raq-url-extra-filter nil)
+(defvar pdd-url-extra-filter nil)
 
-(defun raq-url-http-extra-filter (beg end len)
-  "Call `raq-url-extra-filter'.  BEG, END and LEN see `after-change-functions'."
-  (when (and raq-url-extra-filter (bound-and-true-p url-http-end-of-headers)
+(defun pdd-url-http-extra-filter (beg end len)
+  "Call `pdd-url-extra-filter'.  BEG, END and LEN see `after-change-functions'."
+  (when (and pdd-url-extra-filter (bound-and-true-p url-http-end-of-headers)
              (if (equal url-http-transfer-encoding "chunked") (= beg end) ; when delete
                (= len 0))) ; when insert
     (save-excursion
       (save-restriction
         (narrow-to-region url-http-end-of-headers (point-max))
-        (funcall raq-url-extra-filter)))))
+        (funcall pdd-url-extra-filter)))))
 
-(cl-defmethod raq ((client raq-url-client) url &key method headers data filter done fail sync retry)
+(cl-defmethod pdd ((client pdd-url-client) url &key method headers data filter done fail sync retry)
   "Send a request with CLIENT.
 See the generic method for args URL, METHOD, HEADERS, DATA, FILTER, DONE, FAIL,
 SYNC and RETRY and more."
   (ignore retry)
   (let* ((tag (eieio-object-class client))
-         (url-user-agent (or (oref client user-agent) raq-user-agent))
+         (url-user-agent (or (oref client user-agent) pdd-user-agent))
          (url-proxy-services (or (oref client proxy-services) url-proxy-services))
          (formdatap (and (consp data)
                          (or (string-match-p
@@ -254,29 +255,29 @@ SYNC and RETRY and more."
                               (or (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case) ""))
                              (cl-some (lambda (x) (consp (cdr x))) data))))
          (url-request-data (funcall (if (atom data) #'identity ; string
-                                      (if formdatap #'raq-format-formdata #'raq-format-params)) ; alist
+                                      (if formdatap #'pdd-format-formdata #'pdd-format-params)) ; alist
                                     data))
          (url-request-extra-headers (progn
                                       (when formdatap
                                         (setf (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case)
-                                              (concat "multipart/form-data; boundary=" raq-multipart-boundary)))
+                                              (concat "multipart/form-data; boundary=" pdd-multipart-boundary)))
                                       headers))
          (url-request-method (string-to-unibyte (upcase (format "%s" method))))
          (url-mime-encoding-string "identity")
          (get-resp-content (lambda ()
-                             (set-buffer-multibyte (not (raq-binary-type-p url-http-content-type)))
+                             (set-buffer-multibyte (not (pdd-binary-type-p url-http-content-type)))
                              (list (buffer-substring-no-properties
                                     (min (1+ url-http-end-of-headers) (point-max)) (point-max))
-                                   (raq-extract-http-headers)
+                                   (pdd-extract-http-headers)
                                    url-http-response-status
                                    url-http-response-version))))
-    (when raq-debug
-      (raq-log tag "%s %s" url-request-method url)
-      (raq-log tag "HEADER: %S" url-request-extra-headers)
-      (raq-log tag "DATA: %s" url-request-data)
-      (raq-log tag "Proxy: %s" url-proxy-services)
-      (raq-log tag "User Agent: %s" url-user-agent)
-      (raq-log tag "MIME Encoding: %s" url-mime-encoding-string))
+    (when pdd-debug
+      (pdd-log tag "%s %s" url-request-method url)
+      (pdd-log tag "HEADER: %S" url-request-extra-headers)
+      (pdd-log tag "DATA: %s" url-request-data)
+      (pdd-log tag "Proxy: %s" url-proxy-services)
+      (pdd-log tag "User Agent: %s" url-user-agent)
+      (pdd-log tag "MIME Encoding: %s" url-mime-encoding-string))
     ;; sync
     (if sync
         (condition-case err
@@ -284,7 +285,7 @@ SYNC and RETRY and more."
               (unwind-protect
                   (with-current-buffer buf
                     (let ((s (funcall get-resp-content)))
-                      (if done (raq-funcall done s) (car s))))
+                      (if done (pdd-funcall done s) (car s))))
                 (ignore-errors (kill-buffer buf))))
           (error (if fail (funcall fail err)
                    (signal 'user-error (cdr err)))))
@@ -292,7 +293,7 @@ SYNC and RETRY and more."
       (let ((buf (url-retrieve url
                                (lambda (status)
                                  (let ((cb (current-buffer)))
-                                   (remove-hook 'after-change-functions #'raq-url-http-extra-filter t)
+                                   (remove-hook 'after-change-functions #'pdd-url-http-extra-filter t)
                                    (unwind-protect
                                        (if-let* ((err (or (cdr-safe (plist-get status :error))
                                                           (when (or (null url-http-end-of-headers) (= 1 (point-max)))
@@ -300,19 +301,19 @@ SYNC and RETRY and more."
                                            (if fail (funcall fail err)
                                              (signal 'user-error err))
                                          (when done
-                                           (raq-funcall done (funcall get-resp-content))))
+                                           (pdd-funcall done (funcall get-resp-content))))
                                      (kill-buffer cb))))
                                nil t)))
         (when (and filter (buffer-live-p buf))
           (with-current-buffer buf
-            (setq-local raq-url-extra-filter filter)
-            (add-hook 'after-change-functions #'raq-url-http-extra-filter nil t)))
+            (setq-local pdd-url-extra-filter filter)
+            (add-hook 'after-change-functions #'pdd-url-http-extra-filter nil t)))
         (get-buffer-process buf)))))
 
 
 ;;; Implement of plz.el
 
-(defclass raq-plz-client (raq-client)
+(defclass pdd-plz-client (pdd-client)
   ((extra-args
     :initarg :args
     :type list
@@ -332,18 +333,18 @@ SYNC and RETRY and more."
 (declare-function plz-response-status "ext:plz.el" t t)
 (declare-function plz-response-body "ext:plz.el" t t)
 
-(defvar raq-plz-initialize-error-message
+(defvar pdd-plz-initialize-error-message
   "\n\nTry to install curl and specify the program like this to solve the problem:\n
   (setq plz-curl-program \"c:/msys64/usr/bin/curl.exe\")\n
-Or switch http client to `raq-url-client' instead:\n
-  (setq raq-default-client (raq-url-client))")
+Or switch http client to `pdd-url-client' instead:\n
+  (setq pdd-default-client (pdd-url-client))")
 
-(cl-defmethod raq :before ((_ raq-plz-client) &rest _)
+(cl-defmethod pdd :before ((_ pdd-plz-client) &rest _)
   "Check if `plz.el' is available."
   (unless (and (require 'plz nil t) (executable-find plz-curl-program))
-    (error "You should have `plz.el' and `curl' installed before using `raq-plz-client'")))
+    (error "You should have `plz.el' and `curl' installed before using `pdd-plz-client'")))
 
-(cl-defmethod raq ((client raq-plz-client) url &key method headers data filter done fail sync retry)
+(cl-defmethod pdd ((client pdd-plz-client) url &key method headers data filter done fail sync retry)
   "Send a request with CLIENT.
 See the generic method for args URL, METHOD, HEADERS, DATA, FILTER, DONE, FAIL,
 SYNC and RETRY and more."
@@ -358,7 +359,7 @@ SYNC and RETRY and more."
                               (or (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case) ""))
                              (cl-some (lambda (x) (consp (cdr x))) data))))
          (data (funcall (if (atom data) #'identity ; string
-                          (if formdatap #'raq-format-formdata #'raq-format-params)) ; alist
+                          (if formdatap #'pdd-format-formdata #'pdd-format-params)) ; alist
                         data))
          (string-or-binary (lambda () ; decode according content-type. there is no builtin way to do this in plz
                              (widen)
@@ -369,9 +370,9 @@ SYNC and RETRY and more."
                                              (buffer-substring (point) (line-end-position)))))
                              (let* ((http-version (string-to-number (match-string 1)))
                                     (status-code (string-to-number (match-string 2)))
-                                    (headers (raq-extract-http-headers))
+                                    (headers (pdd-extract-http-headers))
                                     (content-type (alist-get 'content-type headers))
-                                    (binaryp (raq-binary-type-p content-type)))
+                                    (binaryp (pdd-binary-type-p content-type)))
                                (set-buffer-multibyte (not binaryp))
                                (goto-char (point-min))
                                (unless (re-search-forward plz-http-end-of-headers-regexp nil t)
@@ -390,7 +391,7 @@ SYNC and RETRY and more."
                                             (concat (format "%s" (or (cdr curl) (car curl)))
                                                     (pcase (car curl)
                                                       (2 (when (memq system-type '(cygwin windows-nt ms-dos))
-                                                           raq-plz-initialize-error-message))))))
+                                                           pdd-plz-initialize-error-message))))))
                                     (when-let* ((resp (plz-error-response err)))
                                       (list 'http (plz-response-status resp) (plz-response-body resp))))))
                         (if fail (funcall fail err)
@@ -398,15 +399,15 @@ SYNC and RETRY and more."
     ;; headers
     (when formdatap
       (setf (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case)
-            (concat "multipart/form-data; boundary=" raq-multipart-boundary)))
+            (concat "multipart/form-data; boundary=" pdd-multipart-boundary)))
     (unless (alist-get "User-Agent" headers nil nil #'string-equal-ignore-case)
-      (push `("User-Agent" . ,(or (oref client user-agent) raq-user-agent)) headers))
+      (push `("User-Agent" . ,(or (oref client user-agent) pdd-user-agent)) headers))
     ;; log
-    (when raq-debug
-      (raq-log tag "%s" url)
-      (raq-log tag "HEADER: %s" headers)
-      (raq-log tag "DATA: %s" data)
-      (raq-log tag "EXTRA: %s" plz-curl-default-args))
+    (when pdd-debug
+      (pdd-log tag "%s" url)
+      (pdd-log tag "HEADER: %s" headers)
+      (pdd-log tag "DATA: %s" data)
+      (pdd-log tag "EXTRA: %s" plz-curl-default-args))
     ;; sync
     (if sync
         (condition-case err
@@ -417,7 +418,7 @@ SYNC and RETRY and more."
                        :decode nil
                        :as string-or-binary
                        :then 'sync)))
-              (if done (raq-funcall done r) (car r)))
+              (if done (pdd-funcall done r) (car r)))
           (error (funcall raise-error err)))
       ;; async
       (plz method url
@@ -437,45 +438,45 @@ SYNC and RETRY and more."
                           (save-restriction
                             (narrow-to-region (point) (point-max))
                             (funcall filter)))))))
-        :then (lambda (res) (if done (raq-funcall done res)))
+        :then (lambda (res) (if done (pdd-funcall done res)))
         :else (lambda (err) (funcall raise-error err))))))
 
 
 
-(defvar raq-default-client
+(defvar pdd-default-client
   (if (and (require 'plz nil t) (executable-find plz-curl-program))
-      (raq-plz-client)
-    (raq-url-client))
-  "Client used by `raq' by default.
-This should be instance of symbol `raq-client', or a function with current
+      (pdd-plz-client)
+    (pdd-url-client))
+  "Client used by `pdd' by default.
+This should be instance of symbol `pdd-client', or a function with current
 url or url+method as arguments that return an instance.  If is a function,
-the client be used will be determined dynamically when the `raq' be called.")
+the client be used will be determined dynamically when the `pdd' be called.")
 
-(defun raq-ensure-default-client (args)
-  "Pursue the value of variable `raq-default-client' if it is a function.
-ARGS should be the arguments of function `raq'."
-  (if (functionp raq-default-client)
-      (pcase (car (func-arity raq-default-client))
-        (1 (funcall raq-default-client (car args)))
-        (2 (funcall raq-default-client (car args)
+(defun pdd-ensure-default-client (args)
+  "Pursue the value of variable `pdd-default-client' if it is a function.
+ARGS should be the arguments of function `pdd'."
+  (if (functionp pdd-default-client)
+      (pcase (car (func-arity pdd-default-client))
+        (1 (funcall pdd-default-client (car args)))
+        (2 (funcall pdd-default-client (car args)
                     (intern-soft
                      (or (plist-get (cdr args) :method)
                          (if (plist-get (cdr args) :data) 'post 'get)))))
-        (_ (user-error "If `raq-default-client' is a function, it can only have
+        (_ (user-error "If `pdd-default-client' is a function, it can only have
 one argument (url) or two arguments (url method)")))
-    raq-default-client))
+    pdd-default-client))
 
 ;;;###autoload
-(cl-defmethod raq (&rest args)
-  "Send a request with `raq-default-client'.
+(cl-defmethod pdd (&rest args)
+  "Send a request with `pdd-default-client'.
 In this case, the first argument in ARGS should be url instead of client.
 See the generic method for other ARGS and details."
-  (let ((client (raq-ensure-default-client args)))
-    (unless (and client (eieio-object-p client) (object-of-class-p client 'raq-client))
-      (user-error "Make sure `raq-default-client' is available.  eg:\n
-(setq raq-default-client (raq-url-client))\n\n\n"))
-    (apply #'raq client args)))
+  (let ((client (pdd-ensure-default-client args)))
+    (unless (and client (eieio-object-p client) (object-of-class-p client 'pdd-client))
+      (user-error "Make sure `pdd-default-client' is available.  eg:\n
+(setq pdd-default-client (pdd-url-client))\n\n\n"))
+    (apply #'pdd client args)))
 
-(provide 'raq)
+(provide 'pdd)
 
-;;; raq.el ends here
+;;; pdd.el ends here
