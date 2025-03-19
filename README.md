@@ -13,7 +13,7 @@ raq is an HTTP Library Adapter for Emacs. It support `url.el` and [plz.el](https
 
 Just download the `raq.el` and place it in your `load-path`.
 
-If you need request with `curl`, please ensure program `curl` and package `plz` are available.
+> Notice: package `plz` is optionally. At present, if you prefer to use `curl` to send requests, make sure both `curl` and `plz` are available first.
 
 ## Usage
 
@@ -27,10 +27,13 @@ Just request through `raq`, with or without specifying an http client:
 
 ;; You can config it. If not, it will use `(raq-plz-client)` if possible,
 ;; then fallback to `(raq-url-client)` if `plz` is unavailable.
-(setq raq-default-client (raq-plz-client))
+(setq raq-default-client (raq-url-client))
 (setq raq-default-client (raq-plz-client :args '("--proxy" "socks5://127.0.0.1:1080")))
 (setq raq-default-client (raq-url-client :proxies '(("http"  . "host:9999")
                                                     ("https" . "host:9999"))))
+
+;; Use a function to dynamically determine which client to use for a request
+;; The function can have one argument (url), or two arguments (url method)
 (setq raq-default-client
       (lambda (url)
         (if (string-match-p "deepl.com/" url)
@@ -95,9 +98,13 @@ And try to send requests like this:
 (raq "https://httpbin.org/patch" :method 'patch)
 (raq "https://httpbin.org/delete" :method 'delete)
 
-;; Upload. Notice the difference: for file, not (a . path), just (a path)
+;; Upload. Notice the difference: for file, not (a . path), but a list
+;; like (name path) or (name path mime-type)
 (raq "https://httpbin.org/post"
-     :data '((key1 . "value") (key2 "~/aaa.jpeg")))
+     :data '((key1 . "hello")
+             (key2 . "world")
+             (file1 "~/aaa.xxx")
+             (file2 "~/aaa.png" "image/png")))
 
 ;; Download
 (with-temp-file "~/aaa.jpeg"
@@ -107,9 +114,9 @@ And try to send requests like this:
 ## API
 
 ``` emacs-lisp
-(cl-defgeneric raq (http-client url &rest _args &key method headers data
+(cl-defgeneric raq (raq-client url &rest _args &key method headers data
                                 filter done fail sync retry &allow-other-keys)
-  "Send HTTP request using the given HTTP-CLIENT.
+  "Send HTTP request using the given RAQ-CLIENT.
 
 Keyword arguments:
   - URL: The URL to send the request to.

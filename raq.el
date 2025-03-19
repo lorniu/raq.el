@@ -70,9 +70,9 @@ TAG usually is the name of current http client.
 FMT and ARGS are arguments same as function `message'."
   (apply #'message (format "[%s] %s" (or tag "raq") fmt) args))
 
-(defun raq-http-binary-p (content-type)
+(defun raq-binary-type-p (content-type)
   "Check if current CONTENT-TYPE is binary."
-  (if (null content-type) nil
+  (when content-type
     (cl-destructuring-bind (mime sub) (string-split content-type "/" nil "[ \n\r\t]")
       (not (or (equal mime "text")
                (and (equal mime "application")
@@ -109,6 +109,15 @@ FMT and ARGS are arguments same as function `message'."
              else do (insert newline "--" raq-multipart-boundary "--"))
     (buffer-substring-no-properties (point-min) (point-max))))
 
+(defun raq-extract-http-headers ()
+  "Extract http headers from the current responsed buffer."
+  (save-excursion
+    (goto-char (point-min))
+    (forward-line 1)
+    (mapcar (lambda (elt)
+              (cons (car elt) (string-trim (cdr elt))))
+            (mail-header-extract))))
+
 (defun raq-funcall (fn args)
   "Funcall FN and pass some of ARGS to it according its arity."
   (let ((n (car (func-arity fn))))
@@ -135,8 +144,8 @@ FMT and ARGS are arguments same as function `message'."
     (let ((inst (cl-call-next-method)))
       (prog1 inst (oset-default class insts `((,key . ,inst) ,@insts))))))
 
-(cl-defgeneric raq (http-client url &rest _args &key method headers data filter done fail sync retry &allow-other-keys)
-  "Send HTTP request using the given HTTP-CLIENT.
+(cl-defgeneric raq (raq-client url &rest _args &key method headers data filter done fail sync retry &allow-other-keys)
+  "Send HTTP request using the given RAQ-CLIENT.
 
 Keyword arguments:
   - URL: The URL to send the request to.
@@ -255,13 +264,10 @@ SYNC and RETRY and more."
          (url-request-method (string-to-unibyte (upcase (format "%s" method))))
          (url-mime-encoding-string "identity")
          (get-resp-content (lambda ()
-                             (set-buffer-multibyte (not (raq-http-binary-p url-http-content-type)))
+                             (set-buffer-multibyte (not (raq-binary-type-p url-http-content-type)))
                              (list (buffer-substring-no-properties
                                     (min (1+ url-http-end-of-headers) (point-max)) (point-max))
-                                   (save-excursion
-                                     (goto-char (point-min))
-                                     (forward-line 1)
-                                     (mail-header-extract))
+                                   (raq-extract-http-headers)
                                    url-http-response-status
                                    url-http-response-version))))
     (when raq-debug
@@ -325,19 +331,17 @@ SYNC and RETRY and more."
 (declare-function plz-error-response "ext:plz.el" t t)
 (declare-function plz-response-status "ext:plz.el" t t)
 (declare-function plz-response-body "ext:plz.el" t t)
-(declare-function plz--headers "ext:plz.el" t t)
-(declare-function plz--narrow-to-body "ext:plz.el" t t)
 
 (defvar raq-plz-initialize-error-message
   "\n\nTry to install curl and specify the program like this to solve the problem:\n
   (setq plz-curl-program \"c:/msys64/usr/bin/curl.exe\")\n
-Or switch http client to `raq-url-http-client' instead:\n
-  (setq raq-default-http-client (raq-url-http-client))")
+Or switch http client to `raq-url-client' instead:\n
+  (setq raq-default-client (raq-url-client))")
 
 (cl-defmethod raq :before ((_ raq-plz-client) &rest _)
   "Check if `plz.el' is available."
   (unless (and (require 'plz nil t) (executable-find plz-curl-program))
-    (error "You should have `plz.el' and `curl' installed before using `raq-plz'")))
+    (error "You should have `plz.el' and `curl' installed before using `raq-plz-client'")))
 
 (cl-defmethod raq ((client raq-plz-client) url &key method headers data filter done fail sync retry)
   "Send a request with CLIENT.
@@ -361,16 +365,18 @@ SYNC and RETRY and more."
                              (goto-char (point-min))
                              (unless (looking-at plz-http-response-status-line-regexp)
                                (signal 'plz-http-error
-                                       (list "plz--response: Unable to parse HTTP response status line"
+                                       (list "Unable to parse HTTP response status line"
                                              (buffer-substring (point) (line-end-position)))))
                              (let* ((http-version (string-to-number (match-string 1)))
                                     (status-code (string-to-number (match-string 2)))
-                                    (headers (plz--headers))
+                                    (headers (raq-extract-http-headers))
                                     (content-type (alist-get 'content-type headers))
-                                    (binaryp (raq-http-binary-p content-type)))
+                                    (binaryp (raq-binary-type-p content-type)))
                                (set-buffer-multibyte (not binaryp))
                                (goto-char (point-min))
-                               (plz--narrow-to-body)
+                               (unless (re-search-forward plz-http-end-of-headers-regexp nil t)
+                                 (signal 'plz-http-error '("Unable to find end of headers")))
+                               (narrow-to-region (point) (point-max))
                                (unless binaryp (decode-coding-region (point-min) (point-max) 'utf-8))
                                (list (buffer-string) headers status-code http-version))))
          (raise-error (lambda (err)
