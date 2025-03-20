@@ -86,6 +86,12 @@ FMT and ARGS are arguments same as function `message'."
                        (url-hexify-string (format "%s" (or (cdr arg) 1)))))
              (delq nil alist) "&"))
 
+(defun pdd-gen-url-with-params (url params)
+  "Concat PARAMS to URL, and return it."
+  (if-let* ((ps (if (consp params) (pdd-format-params params) params)))
+      (concat url (unless (string-match-p "[?&]$" url) (if (string-match-p "\\?" url) "&" "?")) ps)
+    url))
+
 (defun pdd-format-formdata (alist)
   "Generate multipart/formdata string from ALIST."
   (with-temp-buffer
@@ -149,11 +155,12 @@ Besides globally set, it also can be dynamically binding in let.")
     (let ((inst (cl-call-next-method)))
       (prog1 inst (oset-default class insts `((,key . ,inst) ,@insts))))))
 
-(cl-defgeneric pdd (pdd-client url &rest _args &key method headers data filter done fail sync retry &allow-other-keys)
+(cl-defgeneric pdd (pdd-client url &rest _args &key method params headers data filter done fail sync retry &allow-other-keys)
   "Send HTTP request using the given PDD-CLIENT.
 
 Keyword arguments:
   - URL: The URL to send the request to.
+  - PARAMS: The data to include in the url.  It's a string or alist.
   - METHOD: Request method, symbol like \\='post.  If nil guess by data.
   - HEADERS: Additional headers to include in the request.  Alist.
   - DATA: The data to include in the request.  If this is a string, it will be
@@ -169,11 +176,12 @@ Keyword arguments:
   - SYNC: Non-nil means request synchronized.  Boolean.
 
 If request async, return the process behind the request."
-  (:method :around ((client pdd-client) url &rest args &key method _headers data filter done fail sync retry)
+  (:method :around ((client pdd-client) url &rest args &key method params _headers data filter done fail sync retry)
            ;; normalize and validate
            (if (and (null filter) (null done)) (setq sync t args `(:sync t ,@args)))
            (cl-assert (and url (or (and sync (not filter)) (and (not sync) (or filter done)))))
            (if (null method) (setq args `(:method ,(if data 'post 'get) ,@args)))
+           (setq url (pdd-gen-url-with-params url params))
            ;; sync
            (if sync (apply #'cl-call-next-method client url args)
              ;; async
@@ -247,11 +255,11 @@ If request async, return the process behind the request."
         (narrow-to-region url-http-end-of-headers (point-max))
         (funcall pdd-url-extra-filter)))))
 
-(cl-defmethod pdd ((client pdd-url-client) url &key method headers data filter done fail sync retry)
+(cl-defmethod pdd ((client pdd-url-client) url &key method params headers data filter done fail sync retry)
   "Send a request with CLIENT.
-See the generic method for args URL, METHOD, HEADERS, DATA, FILTER, DONE, FAIL,
-SYNC and RETRY and more."
-  (ignore retry)
+See the generic method for args URL, METHOD, PARAMS, HEADERS, DATA, FILTER,
+DONE, FAIL, SYNC and RETRY and more."
+  (ignore params retry)
   (let* ((tag (eieio-object-class client))
          (handler pdd-default-error-handler)
          (url-user-agent (or (oref client user-agent) pdd-user-agent))
@@ -353,11 +361,11 @@ Or switch http client to `pdd-url-client' instead:\n
   (unless (and (require 'plz nil t) (executable-find plz-curl-program))
     (error "You should have `plz.el' and `curl' installed before using `pdd-plz-client'")))
 
-(cl-defmethod pdd ((client pdd-plz-client) url &key method headers data filter done fail sync retry)
+(cl-defmethod pdd ((client pdd-plz-client) url &key method params headers data filter done fail sync retry)
   "Send a request with CLIENT.
-See the generic method for args URL, METHOD, HEADERS, DATA, FILTER, DONE, FAIL,
-SYNC and RETRY and more."
-  (ignore retry)
+See the generic method for args URL, METHOD, PARAMS HEADERS, DATA, FILTER,
+DONE, FAIL, SYNC and RETRY and more."
+  (ignore params retry)
   (let* ((tag (eieio-object-class client))
          (handler pdd-default-error-handler)
          (plz-curl-default-args (if (slot-boundp client 'extra-args)

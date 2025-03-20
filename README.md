@@ -83,6 +83,7 @@ And try to send requests like this:
 
 ;; Use :retry to set times auto resend the request if timeout (for async only)
 (pdd "https://httpbin.org/post"
+  :params '(("version" . "111"))
   :headers '(("Content-Type" . "application/json"))
   :data '(("key" . "value"))
   :done (lambda (res) (tooltip-show res))
@@ -125,25 +126,27 @@ And try to send requests like this:
 ## API
 
 ``` emacs-lisp
-(cl-defgeneric pdd (pdd-client url &rest _args &key method headers data
-                                filter done fail sync retry &allow-other-keys)
+(cl-defgeneric pdd (pdd-client url &rest _args &key method params headers data
+                                                    filter done fail sync retry
+                                                    &allow-other-keys)
   "Send HTTP request using the given PDD-CLIENT.
 
 Keyword arguments:
   - URL: The URL to send the request to.
-  - METHOD: Request method, symbol like 'post. If nil guess by data.
-  - HEADERS: Additional headers to include in the request. Alist.
-  - DATA: The data to include in the request. If this is a string, it will be
-          sent directly as request body. If this is a list and every element
+  - PARAMS: The data to include in the url.  It's a string or alist.
+  - METHOD: Request method, symbol like 'post.  If nil guess by data.
+  - HEADERS: Additional headers to include in the request.  Alist.
+  - DATA: The data to include in the request.  If this is a string, it will be
+          sent directly as request body.  If this is a list and every element
           is (key . value) then this will be joined to a string like a=1&b=2 and
-          then be sent. If this is a list and some element is (key filename)
+          then be sent.  If this is a list and some element is (key filename)
           format, then the list will be normalized as multipart formdata string
           and be sent.
   - FILTER: A function to be called every time when some data returned.
   - DONE: A function to be called when the request succeeds.
   - FAIL: A function to be called when the request fails.
-  - RETRY: How many times it can retry for timeout. Number.
-  - SYNC: Non-nil means request synchronized. Boolean.
+  - RETRY: How many times it can retry for timeout.  Number.
+  - SYNC: Non-nil means request synchronized.  Boolean.
 
 If request async, return the process behind the request."）
 ```
