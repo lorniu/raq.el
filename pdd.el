@@ -120,9 +120,7 @@ FMT and ARGS are arguments same as function `message'."
   (save-excursion
     (goto-char (point-min))
     (forward-line 1)
-    (mapcar (lambda (elt)
-              (cons (car elt) (string-trim (cdr elt))))
-            (mail-header-extract))))
+    (mail-header-extract)))
 
 (defun pdd-funcall (fn args)
   "Funcall FN and pass some of ARGS to it according its arity."
@@ -188,6 +186,11 @@ If request async, return the process behind the request."
              (let* ((tag (eieio-object-class client))
                     (buf (current-buffer))
                     (handler pdd-default-error-handler)
+                    (arglst (cl-loop
+                             for arg in (if (equal (func-arity done) '(0 . many)) '(a1)
+                                          (help-function-arglist done))
+                             until (memq arg '(&rest &optional &key))
+                             collect arg))
                     (failfn (lambda (status)
                               ;; retry for timeout
                               (unless retry (setq retry pdd-max-retry))
@@ -199,7 +202,8 @@ If request async, return the process behind the request."
                                     (apply #'pdd client url `(:retry ,(1- retry) ,@args)))
                                 ;; failed finally
                                 (if pdd-debug (pdd-log tag "REQUEST FAILED: (%s) %s" url status))
-                                (with-current-buffer (if (buffer-live-p buf) buf (current-buffer))
+                                (with-current-buffer (if (and (buffer-live-p buf) (> (length arglst) 0)) buf
+                                                       (current-buffer))
                                   (if fail (funcall fail status)
                                     (if handler (funcall handler status)
                                       (print status)))))))
@@ -213,15 +217,12 @@ If request async, return the process behind the request."
                                        (setq pdd-stream-abort-flag t)
                                        (if pdd-debug (pdd-log tag "Error in filter: (%s) %s" url err))
                                        (funcall failfn err)))))))
-                    (arglst (cl-loop for arg in (if (equal (func-arity done) '(0 . many)) '(a1)
-                                                  (help-function-arglist done))
-                                     until (memq arg '(&rest &optional &key))
-                                     collect arg))
                     (donefn (if (> (length arglst) 4)
                                 (user-error "Function :done has invalid arguments")
                               `(lambda ,arglst
                                  (if pdd-debug (pdd-log ,tag "Done!"))
-                                 (with-current-buffer (if (buffer-live-p ,buf) ,buf (current-buffer))
+                                 (with-current-buffer (if (and (buffer-live-p ,buf) (> ,(length arglst) 0)) ,buf
+                                                        (current-buffer))
                                    (,done ,@arglst))))))
                (apply #'cl-call-next-method client url `(:fail ,failfn :filter ,filterfn :done ,donefn ,@args)))))
   (declare (indent 1)))
@@ -280,12 +281,13 @@ DONE, FAIL, SYNC and RETRY and more."
          (url-request-method (string-to-unibyte (upcase (format "%s" method))))
          (url-mime-encoding-string "identity")
          (get-resp-content (lambda ()
-                             (set-buffer-multibyte (not (pdd-binary-type-p url-http-content-type)))
-                             (list (buffer-substring-no-properties
-                                    (min (1+ url-http-end-of-headers) (point-max)) (point-max))
-                                   (pdd-extract-http-headers)
-                                   url-http-response-status
-                                   url-http-response-version))))
+                             (unless (and done (= (car (func-arity done)) 0))
+                               (set-buffer-multibyte (not (pdd-binary-type-p url-http-content-type)))
+                               (list (buffer-substring-no-properties
+                                      (min (1+ url-http-end-of-headers) (point-max)) (point-max))
+                                     (pdd-extract-http-headers)
+                                     url-http-response-status
+                                     url-http-response-version)))))
     (when pdd-debug
       (pdd-log tag "%s %s" url-request-method url)
       (pdd-log tag "HEADER: %S" url-request-extra-headers)
@@ -382,22 +384,25 @@ DONE, FAIL, SYNC and RETRY and more."
          (string-or-binary (lambda () ; decode according content-type. there is no builtin way to do this in plz
                              (widen)
                              (goto-char (point-min))
-                             (unless (looking-at plz-http-response-status-line-regexp)
-                               (signal 'plz-http-error
-                                       (list "Unable to parse HTTP response status line"
-                                             (buffer-substring (point) (line-end-position)))))
-                             (let* ((http-version (string-to-number (match-string 1)))
-                                    (status-code (string-to-number (match-string 2)))
-                                    (headers (pdd-extract-http-headers))
-                                    (content-type (alist-get 'content-type headers))
-                                    (binaryp (pdd-binary-type-p content-type)))
-                               (set-buffer-multibyte (not binaryp))
-                               (goto-char (point-min))
-                               (unless (re-search-forward plz-http-end-of-headers-regexp nil t)
-                                 (signal 'plz-http-error '("Unable to find end of headers")))
-                               (narrow-to-region (point) (point-max))
-                               (unless binaryp (decode-coding-region (point-min) (point-max) 'utf-8))
-                               (list (buffer-string) headers status-code http-version))))
+                             (save-excursion
+                               (while (search-forward "\r" nil :noerror) (replace-match "")))
+                             (unless (and done (= (car (func-arity done)) 0))
+                               (unless (looking-at plz-http-response-status-line-regexp)
+                                 (signal 'plz-http-error
+                                         (list "Unable to parse HTTP response status line"
+                                               (buffer-substring (point) (line-end-position)))))
+                               (let* ((http-version (string-to-number (match-string 1)))
+                                      (status-code (string-to-number (match-string 2)))
+                                      (headers (pdd-extract-http-headers))
+                                      (content-type (alist-get 'content-type headers))
+                                      (binaryp (pdd-binary-type-p content-type)))
+                                 (set-buffer-multibyte (not binaryp))
+                                 (goto-char (point-min))
+                                 (unless (re-search-forward plz-http-end-of-headers-regexp nil t)
+                                   (signal 'plz-http-error '("Unable to find end of headers")))
+                                 (narrow-to-region (point) (point-max))
+                                 (unless binaryp (decode-coding-region (point-min) (point-max) 'utf-8))
+                                 (list (buffer-string) headers status-code http-version)))))
          (raise-error (lambda (err)
                         (when (and (consp err) (memq (car err) '(plz-http-error plz-curl-error)))
                           (setq err (caddr err)))

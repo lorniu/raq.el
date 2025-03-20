@@ -99,7 +99,7 @@ And try to send requests like this:
   :fail (lambda (err) (message "FAIL")))
 
 ;; Arguments of :done are smart, it can be zero, one, two, three or four
-(pdd "https://httpbin.org/ip" :done (lambda () (message "bingo")))
+(pdd "https://httpbin.org/ip" :done (lambda () (message "%s" (buffer-string))))
 (pdd "https://httpbin.org/ip" :done (lambda (body) (message "%s" body)))
 (pdd "https://httpbin.org/ip" :done (lambda (_body headers) (message "%s" headers)))
 (pdd "https://httpbin.org/ip" :done (lambda (_ _ status-code) (message "%s" status-code)))
