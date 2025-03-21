@@ -115,6 +115,34 @@ FMT and ARGS are arguments same as function `message'."
              else do (insert newline "--" pdd-multipart-boundary "--"))
     (buffer-substring-no-properties (point-min) (point-max))))
 
+(defun pdd-transform-request (data headers)
+  "Transform DATA according HEADERS for request."
+  (if pdd-debug (pdd-log nil "transform response..."))
+  (let (binaryp)
+    (list (if (atom data) (format "%s" (or data ""))
+            (let ((ct (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case)))
+              (cond ((string-match-p "/json" (or ct ""))
+                     (setq binaryp t)
+                     (encode-coding-string (json-encode data) 'utf-8))
+                    ((cl-some (lambda (x) (consp (cdr x))) data)
+                     (setq binaryp t)
+                     (setf (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case)
+                           (concat "multipart/form-data; boundary=" pdd-multipart-boundary))
+                     (pdd-format-formdata data))
+                    (t (pdd-format-params data)))))
+          headers binaryp)))
+
+(defun pdd-transform-response (data meta)
+  "Transform responsed DATA according META.
+META maybe a function or the response headers."
+  (if pdd-debug (pdd-log nil "transform response..."))
+  (if (functionp meta)
+      (funcall meta data)
+    (let ((ct (alist-get "content-type" meta nil nil #'string=)))
+      (cond ((string-match-p ct "application/json")
+             (json-read-from-string (decode-coding-string data 'utf-8)))
+            (t data)))))
+
 (defun pdd-extract-http-headers ()
   "Extract http headers from the current responsed buffer."
   (save-excursion
@@ -153,7 +181,18 @@ Besides globally set, it also can be dynamically binding in let.")
     (let ((inst (cl-call-next-method)))
       (prog1 inst (oset-default class insts `((,key . ,inst) ,@insts))))))
 
-(cl-defgeneric pdd (pdd-client url &rest _args &key method params headers data filter done fail sync retry &allow-other-keys)
+(cl-defgeneric pdd (pdd-client url &rest _args &key
+                               method
+                               params
+                               headers
+                               data
+                               resp
+                               filter
+                               done
+                               fail
+                               sync
+                               retry
+                               &allow-other-keys)
   "Send HTTP request using the given PDD-CLIENT.
 
 Keyword arguments:
@@ -167,6 +206,10 @@ Keyword arguments:
           then be sent.  If this is a list and some element is (key filename)
           format, then the list will be normalized as multipart formdata string
           and be sent.
+  - RESP: Whether or how to auto encode the response content.
+          Currently this should a function with responsed string as argument.
+          For example, make this with value #\\='identity should make
+          the raw responsed string is passed to DONE without any parsed..
   - FILTER: A function to be called every time when some data returned.
   - DONE: A function to be called when the request succeeds.
   - FAIL: A function to be called when the request fails.
@@ -174,7 +217,8 @@ Keyword arguments:
   - SYNC: Non-nil means request synchronized.  Boolean.
 
 If request async, return the process behind the request."
-  (:method :around ((client pdd-client) url &rest args &key method params _headers data filter done fail sync retry)
+  (:method :around ((client pdd-client) url &rest args &key method
+                    params _headers data _resp filter done fail sync retry)
            ;; normalize and validate
            (if (and (null filter) (null done)) (setq sync t args `(:sync t ,@args)))
            (cl-assert (and url (or (and sync (not filter)) (and (not sync) (or filter done)))))
@@ -256,38 +300,30 @@ If request async, return the process behind the request."
         (narrow-to-region url-http-end-of-headers (point-max))
         (funcall pdd-url-extra-filter)))))
 
-(cl-defmethod pdd ((client pdd-url-client) url &key method params headers data filter done fail sync retry)
+(cl-defmethod pdd ((client pdd-url-client) url &key method
+                   params headers data resp filter done fail sync retry)
   "Send a request with CLIENT.
-See the generic method for args URL, METHOD, PARAMS, HEADERS, DATA, FILTER,
-DONE, FAIL, SYNC and RETRY and more."
+See the generic method for args URL, METHOD, PARAMS, HEADERS, DATA, RESP,
+FILTER, DONE, FAIL, SYNC and RETRY and more."
   (ignore params retry)
   (let* ((tag (eieio-object-class client))
          (handler pdd-default-error-handler)
          (url-user-agent (or (oref client user-agent) pdd-user-agent))
          (url-proxy-services (or (oref client proxy-services) url-proxy-services))
-         (formdatap (and (consp data)
-                         (or (string-match-p
-                              "multipart/formdata"
-                              (or (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case) ""))
-                             (cl-some (lambda (x) (consp (cdr x))) data))))
-         (url-request-data (funcall (if (atom data) #'identity ; string
-                                      (if formdatap #'pdd-format-formdata #'pdd-format-params)) ; alist
-                                    data))
-         (url-request-extra-headers (progn
-                                      (when formdatap
-                                        (setf (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case)
-                                              (concat "multipart/form-data; boundary=" pdd-multipart-boundary)))
-                                      headers))
+         (rdata (pdd-transform-request data headers))
+         (url-request-data (car rdata))
+         (url-request-extra-headers (cadr rdata))
          (url-request-method (string-to-unibyte (upcase (format "%s" method))))
          (url-mime-encoding-string "identity")
          (get-resp-content (lambda ()
                              (unless (and done (= (car (func-arity done)) 0))
                                (set-buffer-multibyte (not (pdd-binary-type-p url-http-content-type)))
-                               (list (buffer-substring-no-properties
-                                      (min (1+ url-http-end-of-headers) (point-max)) (point-max))
-                                     (pdd-extract-http-headers)
-                                     url-http-response-status
-                                     url-http-response-version)))))
+                               (let ((bfs (buffer-substring-no-properties
+                                           (min (1+ url-http-end-of-headers) (point-max)) (point-max)))
+                                     (hds (pdd-extract-http-headers)))
+                                 (list (pdd-transform-response bfs (or resp hds)) hds
+                                       url-http-response-status
+                                       url-http-response-version))))))
     (when pdd-debug
       (pdd-log tag "%s %s" url-request-method url)
       (pdd-log tag "HEADER: %S" url-request-extra-headers)
@@ -363,24 +399,18 @@ Or switch http client to `pdd-url-client' instead:\n
   (unless (and (require 'plz nil t) (executable-find plz-curl-program))
     (error "You should have `plz.el' and `curl' installed before using `pdd-plz-client'")))
 
-(cl-defmethod pdd ((client pdd-plz-client) url &key method params headers data filter done fail sync retry)
+(cl-defmethod pdd ((client pdd-plz-client) url &key method
+                   params headers data resp filter done fail sync retry)
   "Send a request with CLIENT.
-See the generic method for args URL, METHOD, PARAMS HEADERS, DATA, FILTER,
-DONE, FAIL, SYNC and RETRY and more."
+See the generic method for args URL, METHOD, PARAMS HEADERS, DATA, RESP,
+FILTER, DONE, FAIL, SYNC and RETRY and more."
   (ignore params retry)
   (let* ((tag (eieio-object-class client))
          (handler pdd-default-error-handler)
          (plz-curl-default-args (if (slot-boundp client 'extra-args)
                                     (append (oref client extra-args) plz-curl-default-args)
                                   plz-curl-default-args))
-         (formdatap (and (consp data)
-                         (or (string-match-p
-                              "multipart/formdata"
-                              (or (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case) ""))
-                             (cl-some (lambda (x) (consp (cdr x))) data))))
-         (data (funcall (if (atom data) #'identity ; string
-                          (if formdatap #'pdd-format-formdata #'pdd-format-params)) ; alist
-                        data))
+         (rdata (pdd-transform-request data headers))
          (string-or-binary (lambda () ; decode according content-type. there is no builtin way to do this in plz
                              (widen)
                              (goto-char (point-min))
@@ -402,7 +432,8 @@ DONE, FAIL, SYNC and RETRY and more."
                                    (signal 'plz-http-error '("Unable to find end of headers")))
                                  (narrow-to-region (point) (point-max))
                                  (unless binaryp (decode-coding-region (point-min) (point-max) 'utf-8))
-                                 (list (buffer-string) headers status-code http-version)))))
+                                 (list (pdd-transform-response (buffer-string) (or resp headers))
+                                       headers status-code http-version)))))
          (raise-error (lambda (err)
                         (when (and (consp err) (memq (car err) '(plz-http-error plz-curl-error)))
                           (setq err (caddr err)))
@@ -415,15 +446,13 @@ DONE, FAIL, SYNC and RETRY and more."
                                                     (pcase (car curl)
                                                       (2 (when (memq system-type '(cygwin windows-nt ms-dos))
                                                            pdd-plz-initialize-error-message))))))
-                                    (when-let* ((resp (plz-error-response err)))
-                                      (list 'http (plz-response-status resp) (plz-response-body resp))))))
+                                    (when-let* ((res (plz-error-response err)))
+                                      (list 'http (plz-response-status res) (plz-response-body res))))))
                         (if fail (funcall fail err)
                           (if handler (funcall handler err)
                             (signal 'user-error (cdr err)))))))
-    ;; headers
-    (when formdatap
-      (setf (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case)
-            (concat "multipart/form-data; boundary=" pdd-multipart-boundary)))
+    ;; data and headers
+    (setq data (car rdata) headers (cadr rdata))
     (unless (alist-get "User-Agent" headers nil nil #'string-equal-ignore-case)
       (push `("User-Agent" . ,(or (oref client user-agent) pdd-user-agent)) headers))
     ;; log
@@ -438,7 +467,7 @@ DONE, FAIL, SYNC and RETRY and more."
             (let ((r (plz method url
                        :headers headers
                        :body data
-                       :body-type (if formdatap 'binary 'text)
+                       :body-type (if (caddr rdata) 'binary 'text)
                        :decode nil
                        :as string-or-binary
                        :then 'sync)))
@@ -448,7 +477,7 @@ DONE, FAIL, SYNC and RETRY and more."
       (plz method url
         :headers headers
         :body data
-        :body-type (if formdatap 'binary 'text)
+        :body-type (if (caddr rdata) 'binary 'text)
         :decode nil
         :as string-or-binary
         :filter (when filter

@@ -49,27 +49,25 @@ Just request through `pdd`, with or without specifying an http client:
 And try to send requests like this:
 ``` emacs-lisp
 ;; By default, sync, get
-(message "%s" (pdd "https://httpbin.org/user-agent"))
+(pp (pdd "https://httpbin.org/user-agent"))
 
 ;; Use :headers keyword to supply data sent in http header
 ;; Use :data keyword to supply data sent in http body
 ;; If :data is present, the :method 'post can be ignored
 (pdd "https://httpbin.org/post"
-  :headers '(("Content-Type" . "application/json"))
+  :headers '(("User-Agent" . "..."))
   :data '(("key" . "value")) ; or string "key=value&..." directly
   :method 'post)
 
 ;; If :done is present and :sync t is absent, the request will be asynchronous!
 (pdd "https://httpbin.org/post"
-  :headers '(("Content-Type" . "application/json"))
   :data '(("key" . "value"))
-  :done (lambda (res) (tooltip-show res)))
+  :done (lambda (res) (pp res)))
 
 ;; And with :fail to catch the error
 (pdd "https://httpbin.org/post"
-  :headers '(("Content-Type" . "application/json"))
   :data '(("key" . "value"))
-  :done (lambda (res) (tooltip-show res))
+  :done (lambda (res) (pp res))
   :fail (lambda (err) (message "FAIL")))
 
 ;; Use `pdd-default-error-handler' to catch error when :fail is absent
@@ -77,30 +75,32 @@ And try to send requests like this:
 (let ((pdd-default-error-handler
        (lambda (err) (message "Crying %s..." (cadr err)))))
   (pdd "https://httpbin.org/post-error"
-    :headers '(("Content-Type" . "application/json"))
     :data '(("key" . "value"))
-    :done (lambda (res) (tooltip-show res))))
+    :done (lambda (res) (pp res))))
 
 ;; Use :retry to set times auto resend the request if timeout (for async only)
+;; Also, you can see, if the content-type is json, :data will be auto decoded,
+;; If the response content-type is json, result string is auto parsed to elisp object
+;; So, for RESTful, what you need is just specify the correct json content-type
 (pdd "https://httpbin.org/post"
   :params '(("version" . "111"))
   :headers '(("Content-Type" . "application/json"))
   :data '(("key" . "value"))
-  :done (lambda (res) (tooltip-show res))
+  :done (lambda (res) (pp res))
   :fail (lambda (err) (message "FAIL"))
   :retry 3)
 
 ;; Use :filter to provide logic as every chunk back (for stream feature)
 (pdd "https://httpbin.org/post"
-  :headers '(("Content-Type" . "application/json"))
   :data '(("key" . "value"))
   :filter (lambda () (message "%s" (buffer-size)))
-  :done (lambda (res) (tooltip-show res))
+  :done (lambda (res) (pp res))
   :fail (lambda (err) (message "FAIL")))
 
 ;; Arguments of :done are smart, it can be zero, one, two, three or four
+;; If zero argument, current buffer is the one with raw responsed string
 (pdd "https://httpbin.org/ip" :done (lambda () (message "%s" (buffer-string))))
-(pdd "https://httpbin.org/ip" :done (lambda (body) (message "%s" body)))
+(pdd "https://httpbin.org/ip" :done (lambda (body) (message "IP: %s" (cdar body))))
 (pdd "https://httpbin.org/ip" :done (lambda (_body headers) (message "%s" headers)))
 (pdd "https://httpbin.org/ip" :done (lambda (_ _ status-code) (message "%s" status-code)))
 (pdd "https://httpbin.org/ip" :done (lambda (_ _ _ http-version) (message "%s" http-version)))
@@ -126,7 +126,7 @@ And try to send requests like this:
 ## API
 
 ``` emacs-lisp
-(cl-defgeneric pdd (pdd-client url &rest _args &key method params headers data
+(cl-defgeneric pdd (pdd-client url &rest _args &key method params headers data resp
                                                     filter done fail sync retry
                                                     &allow-other-keys)
   "Send HTTP request using the given PDD-CLIENT.
@@ -142,6 +142,10 @@ Keyword arguments:
           then be sent.  If this is a list and some element is (key filename)
           format, then the list will be normalized as multipart formdata string
           and be sent.
+  - RESP: Whether or how to auto encode the response content.
+          Currently this should a function with responsed string as argument.
+          For example, make this with value #'identity should make
+          the raw responsed string is passed to DONE without any parsed.
   - FILTER: A function to be called every time when some data returned.
   - DONE: A function to be called when the request succeeds.
   - FAIL: A function to be called when the request fails.
