@@ -84,10 +84,10 @@ And try to send requests like this:
 ;; If the response content-type is json, result string is auto parsed to elisp object
 ;; So, for RESTful, what you need is just specify the correct json content-type
 (pdd "https://httpbin.org/post"
-  :params '(("version" . "111"))
-  :headers '(("Content-Type" . "application/json"))
-  :data '(("key" . "value"))
-  :done (lambda (res) (pp res))
+  :params '(("name" . "jerry") ("age" . 8)) ; these will be concated to url
+  :headers '(("Content-Type" . "application/json")) ; can use abbrev as :headers '(json)
+  :data '(("key" . "value"))       ; this will be encoded to json string automatelly
+  :done (lambda (json) (pp json))  ; cause of auto parse, the argument `json' is an alist
   :fail (lambda (err) (message "FAIL"))
   :timeout 0.9 :retry 5)
 

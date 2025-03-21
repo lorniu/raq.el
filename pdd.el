@@ -115,11 +115,33 @@ FMT and ARGS are arguments same as function `message'."
              else do (insert newline "--" pdd-multipart-boundary "--"))
     (buffer-substring-no-properties (point-min) (point-max))))
 
+(defvar pdd-header-rewrite-rules
+  '((ua-emacs    . ("User-Agent"   . "Emacs Agent"))
+    (keep-alive  . ("Connection"   . "Keep-Alive"))
+    (json        . ("Content-Type" . "application/json"))
+    (json-u8     . ("Content-Type" . "application/json; charset=utf-8"))
+    (www-url     . ("Content-Type" . "application/x-www-form-urlencoded"))
+    (www-url-u8  . ("Content-Type" . "application/x-www-form-urlencoded; charset=utf-8")))
+  "Some abbrevs can be used in alist of headers for short.
+They are be replaced when transforming request.")
+
 (defun pdd-transform-request (data headers)
   "Transform DATA according HEADERS for request."
   (if pdd-debug (pdd-log nil "transform response..."))
   (let (binaryp)
-    (list (if (atom data) (format "%s" (or data ""))
+    (setq headers
+          (cl-loop
+           with stringfy = (lambda (p) (cons (format "%s" (car p)) (format "%s" (cdr p))))
+           for item in headers for v = nil
+           if (null item) do (ignore)
+           if (setq v (and (symbolp item) (alist-get item pdd-header-rewrite-rules)))
+           collect (funcall stringfy v)
+           else if (setq v (and (consp item) (symbolp (car item)) (null (cdr item))
+                                (alist-get (car item) pdd-header-rewrite-rules)))
+           collect (funcall stringfy v)
+           else if (cdr item) collect (funcall stringfy item)))
+    (setq data
+          (if (and data (atom data)) (format "%s" data)
             (let ((ct (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case)))
               (cond ((string-match-p "/json" (or ct ""))
                      (setq binaryp t)
@@ -129,8 +151,8 @@ FMT and ARGS are arguments same as function `message'."
                      (setf (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case)
                            (concat "multipart/form-data; boundary=" pdd-multipart-boundary))
                      (pdd-format-formdata data))
-                    (t (pdd-format-params data)))))
-          headers binaryp)))
+                    (t (pdd-format-params data))))))
+    (list data headers binaryp)))
 
 (defun pdd-transform-response (data meta)
   "Transform responsed DATA according META.
@@ -138,8 +160,8 @@ META maybe a function or the response headers."
   (if pdd-debug (pdd-log nil "transform response..."))
   (if (functionp meta)
       (funcall meta data)
-    (let ((ct (alist-get "content-type" meta nil nil #'string=)))
-      (cond ((string-match-p ct "application/json")
+    (let ((ct (alist-get 'content-type meta)))
+      (cond ((string-match-p "application/json" ct)
              (json-read-from-string (decode-coding-string data 'utf-8)))
             (t data)))))
 
