@@ -192,6 +192,7 @@ Besides globally set, it also can be dynamically binding in let.")
                                fail
                                fine
                                sync
+                               timeout
                                retry
                                &allow-other-keys)
   "Send HTTP request using the given PDD-CLIENT.
@@ -216,16 +217,18 @@ Keyword arguments:
   - FAIL: A function to be called when the request fails.
   - FINE: A function to be called at last, no matter done or fail.
   - RETRY: How many times it can retry for timeout.  Number.
+  - TIMEOUT: Set connect timeout for request.  Number.
   - SYNC: Non-nil means request synchronized.  Boolean.
 
 If request async, return the process behind the request."
   (:method :around ((client pdd-client) url &rest args &key method
-                    params _headers data _resp filter done fail fine sync retry)
+                    params _headers data _resp filter done fail fine _timeout sync retry
+                    &aux origin-url)
            ;; normalize and validate
            (if (and (null filter) (null done)) (setq sync t args `(:sync t ,@args)))
            (cl-assert (and url (or (and sync (not filter)) (and (not sync) (or filter done)))))
            (if (null method) (setq args `(:method ,(if data 'post 'get) ,@args)))
-           (setq url (pdd-gen-url-with-params url params))
+           (setq origin-url url url (pdd-gen-url-with-params origin-url params))
            ;; sync
            (if sync (apply #'cl-call-next-method client url args)
              ;; async
@@ -240,12 +243,13 @@ If request async, return the process behind the request."
                     (failfn (lambda (status)
                               ;; retry for timeout
                               (unless retry (setq retry pdd-max-retry))
-                              (if (and (string-match-p "peration timeout" (format "%s" status)) (cl-plusp retry))
+                              (if (and (string-match-p "timeout\\|503" (format "%s" status))
+                                       (cl-plusp retry))
                                   (progn
                                     (let ((inhibit-message t))
                                       (message "Timeout, retrying (%d)..." retry))
                                     (if pdd-debug (pdd-log tag "Request timeout, retrying (remains %d times)..." retry))
-                                    (apply #'pdd client url `(:retry ,(1- retry) ,@args)))
+                                    (apply #'pdd client origin-url `(:retry ,(1- retry) ,@args)))
                                 ;; failed finally
                                 (if pdd-debug (pdd-log tag "REQUEST FAILED: (%s) %s" url status))
                                 (unwind-protect
@@ -305,10 +309,10 @@ If request async, return the process behind the request."
         (funcall pdd-url-extra-filter)))))
 
 (cl-defmethod pdd ((client pdd-url-client) url &key method
-                   params headers data resp filter done fail fine sync retry)
+                   params headers data resp filter done fail fine timeout sync retry)
   "Send a request with CLIENT.
 See the generic method for args URL, METHOD, PARAMS, HEADERS, DATA, RESP,
-FILTER, DONE, FAIL, FINE, SYNC and RETRY and more."
+FILTER, DONE, FAIL, FINE, TIMEOUT, SYNC and RETRY and more."
   (ignore params fine retry)
   (let* ((tag (eieio-object-class client))
          (fail (or fail pdd-default-error-handler))
@@ -347,26 +351,36 @@ FILTER, DONE, FAIL, FINE, SYNC and RETRY and more."
           (error (if fail (funcall fail err)
                    (signal 'user-error (cdr err)))))
       ;; async
-      (let ((buf (url-retrieve url
-                               (lambda (status)
-                                 (let ((cb (current-buffer)))
-                                   (remove-hook 'after-change-functions #'pdd-url-http-extra-filter t)
-                                   (unwind-protect
-                                       (if-let* ((err (or (cdr-safe (plist-get status :error))
-                                                          (when (or (null url-http-end-of-headers) (= 1 (point-max)))
-                                                            (list 'empty-response "Nothing response from server")))))
-                                           (if fail (funcall fail err)
-                                             (if handler (funcall handler err)
-                                               (signal 'user-error err)))
-                                         (when done
-                                           (pdd-funcall done (funcall get-resp-content))))
-                                     (kill-buffer cb))))
-                               nil t)))
+      (let* ((buf (url-retrieve url
+                                (lambda (status)
+                                  (let ((cb (current-buffer)))
+                                    (remove-hook 'after-change-functions #'pdd-url-http-extra-filter t)
+                                    (unwind-protect
+                                        (if-let* ((err (or (cdr-safe (plist-get status :error))
+                                                           (when (or (null url-http-end-of-headers) (= 1 (point-max)))
+                                                             (list 'empty-response "Nothing response from server")))))
+                                            (if fail (funcall fail err)
+                                              (signal 'user-error err))
+                                          (when done
+                                            (pdd-funcall done (funcall get-resp-content))))
+                                      (kill-buffer cb))))
+                                nil t))
+             (process (get-buffer-process buf)))
+        (when (numberp timeout)
+          (run-with-timer timeout nil (lambda ()
+                                        (ignore-errors
+                                          (stop-process process))
+                                        (ignore-errors
+                                          (with-current-buffer buf
+                                            (erase-buffer)
+                                            (insert "HTTP/1.1 503 Operation timeout\n\nOperation timeout")))
+                                        (ignore-errors
+                                          (delete-process process)))))
         (when (and filter (buffer-live-p buf))
           (with-current-buffer buf
             (setq-local pdd-url-extra-filter filter)
             (add-hook 'after-change-functions #'pdd-url-http-extra-filter nil t)))
-        (get-buffer-process buf)))))
+        process))))
 
 
 ;;; Implement of plz.el
@@ -403,10 +417,10 @@ Or switch http client to `pdd-url-client' instead:\n
     (error "You should have `plz.el' and `curl' installed before using `pdd-plz-client'")))
 
 (cl-defmethod pdd ((client pdd-plz-client) url &key method
-                   params headers data resp filter done fail fine sync retry)
+                   params headers data resp filter done fail fine timeout sync retry)
   "Send a request with CLIENT.
 See the generic method for args URL, METHOD, PARAMS HEADERS, DATA, RESP,
-FILTER, DONE, FAIL, FINE, SYNC and RETRY and more."
+FILTER, DONE, FAIL, FINE, TIMEOUT, SYNC and RETRY and more."
   (ignore params fine retry)
   (let* ((tag (eieio-object-class client))
          (fail (or fail pdd-default-error-handler))
@@ -472,7 +486,8 @@ FILTER, DONE, FAIL, FINE, SYNC and RETRY and more."
                        :body-type (if (caddr rdata) 'binary 'text)
                        :decode nil
                        :as string-or-binary
-                       :then 'sync)))
+                       :then 'sync
+                       :timeout timeout)))
               (if done (pdd-funcall done r) (car r)))
           (error (funcall raise-error err)))
       ;; async
@@ -494,7 +509,8 @@ FILTER, DONE, FAIL, FINE, SYNC and RETRY and more."
                             (narrow-to-region (point) (point-max))
                             (funcall filter)))))))
         :then (lambda (res) (if done (pdd-funcall done res)))
-        :else (lambda (err) (funcall raise-error err))))))
+        :else (lambda (err) (funcall raise-error err))
+        :timeout timeout))))
 
 
 

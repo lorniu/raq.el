@@ -78,6 +78,7 @@ And try to send requests like this:
     :data '(("key" . "value"))
     :done (lambda (res) (pp res))))
 
+;; Use :timeout to set how long one request can wait (seconds)
 ;; Use :retry to set times auto resend the request if timeout (for async only)
 ;; Also, you can see, if the content-type is json, :data will be auto decoded,
 ;; If the response content-type is json, result string is auto parsed to elisp object
@@ -88,7 +89,7 @@ And try to send requests like this:
   :data '(("key" . "value"))
   :done (lambda (res) (pp res))
   :fail (lambda (err) (message "FAIL"))
-  :retry 3)
+  :timeout 0.9 :retry 5)
 
 ;; Use :filter to provide logic as every chunk back (for stream feature)
 (pdd "https://httpbin.org/post"
@@ -144,6 +145,7 @@ And try to send requests like this:
                                fail
                                fine
                                sync
+                               timeout
                                retry
                                &allow-other-keys)
   "Send HTTP request using the given PDD-CLIENT.
@@ -168,6 +170,7 @@ Keyword arguments:
   - FAIL: A function to be called when the request fails.
   - FINE: A function to be called at last, no matter done or fail.
   - RETRY: How many times it can retry for timeout.  Number.
+  - TIMEOUT: Set connect timeout for request.  Number.
   - SYNC: Non-nil means request synchronized.  Boolean.
 
 If request async, return the process behind the request."）
