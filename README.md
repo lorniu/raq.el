@@ -97,6 +97,13 @@ And try to send requests like this:
   :done (lambda (res) (pp res))
   :fail (lambda (err) (message "FAIL")))
 
+;; The function :fine will run at last, no matter done or fail, everything is fine
+(pdd "https://httpbin.org/post"
+  :data '(("key" . "value"))
+  :done (lambda (res) (pp res))
+  :fail (lambda (err) (message "FAIL"))
+  :fine (lambda () (message "kindness, please")))
+
 ;; Arguments of :done are smart, it can be zero, one, two, three or four
 ;; If zero argument, current buffer is the one with raw responsed string
 (pdd "https://httpbin.org/ip" :done (lambda () (message "%s" (buffer-string))))
@@ -126,9 +133,19 @@ And try to send requests like this:
 ## API
 
 ``` emacs-lisp
-(cl-defgeneric pdd (pdd-client url &rest _args &key method params headers data resp
-                                                    filter done fail sync retry
-                                                    &allow-other-keys)
+(cl-defgeneric pdd (pdd-client url &rest _args &key
+                               method
+                               params
+                               headers
+                               data
+                               resp
+                               filter
+                               done
+                               fail
+                               fine
+                               sync
+                               retry
+                               &allow-other-keys)
   "Send HTTP request using the given PDD-CLIENT.
 
 Keyword arguments:
@@ -149,6 +166,7 @@ Keyword arguments:
   - FILTER: A function to be called every time when some data returned.
   - DONE: A function to be called when the request succeeds.
   - FAIL: A function to be called when the request fails.
+  - FINE: A function to be called at last, no matter done or fail.
   - RETRY: How many times it can retry for timeout.  Number.
   - SYNC: Non-nil means request synchronized.  Boolean.
 

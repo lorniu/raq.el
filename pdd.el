@@ -190,6 +190,7 @@ Besides globally set, it also can be dynamically binding in let.")
                                filter
                                done
                                fail
+                               fine
                                sync
                                retry
                                &allow-other-keys)
@@ -213,12 +214,13 @@ Keyword arguments:
   - FILTER: A function to be called every time when some data returned.
   - DONE: A function to be called when the request succeeds.
   - FAIL: A function to be called when the request fails.
+  - FINE: A function to be called at last, no matter done or fail.
   - RETRY: How many times it can retry for timeout.  Number.
   - SYNC: Non-nil means request synchronized.  Boolean.
 
 If request async, return the process behind the request."
   (:method :around ((client pdd-client) url &rest args &key method
-                    params _headers data _resp filter done fail sync retry)
+                    params _headers data _resp filter done fail fine sync retry)
            ;; normalize and validate
            (if (and (null filter) (null done)) (setq sync t args `(:sync t ,@args)))
            (cl-assert (and url (or (and sync (not filter)) (and (not sync) (or filter done)))))
@@ -229,7 +231,7 @@ If request async, return the process behind the request."
              ;; async
              (let* ((tag (eieio-object-class client))
                     (buf (current-buffer))
-                    (handler pdd-default-error-handler)
+                    (fail (or fail pdd-default-error-handler))
                     (arglst (cl-loop
                              for arg in (if (equal (func-arity done) '(0 . many)) '(a1)
                                           (help-function-arglist done))
@@ -246,11 +248,11 @@ If request async, return the process behind the request."
                                     (apply #'pdd client url `(:retry ,(1- retry) ,@args)))
                                 ;; failed finally
                                 (if pdd-debug (pdd-log tag "REQUEST FAILED: (%s) %s" url status))
-                                (with-current-buffer (if (and (buffer-live-p buf) (> (length arglst) 0)) buf
-                                                       (current-buffer))
-                                  (if fail (funcall fail status)
-                                    (if handler (funcall handler status)
-                                      (print status)))))))
+                                (unwind-protect
+                                    (with-current-buffer (if (and (buffer-live-p buf) (> (length arglst) 0)) buf
+                                                           (current-buffer))
+                                      (if fail (funcall fail status) (print status)))
+                                  (ignore-errors (funcall fine))))))
                     (filterfn (when filter
                                 (lambda ()
                                   ;; abort action and error case
@@ -265,9 +267,11 @@ If request async, return the process behind the request."
                                 (user-error "Function :done has invalid arguments")
                               `(lambda ,arglst
                                  (if pdd-debug (pdd-log ,tag "Done!"))
-                                 (with-current-buffer (if (and (buffer-live-p ,buf) (> ,(length arglst) 0)) ,buf
-                                                        (current-buffer))
-                                   (,done ,@arglst))))))
+                                 (unwind-protect
+                                     (with-current-buffer (if (and (buffer-live-p ,buf) (> ,(length arglst) 0)) ,buf
+                                                            (current-buffer))
+                                       (,done ,@arglst))
+                                   (ignore-errors (funcall ,fine)))))))
                (apply #'cl-call-next-method client url `(:fail ,failfn :filter ,filterfn :done ,donefn ,@args)))))
   (declare (indent 1)))
 
@@ -301,13 +305,13 @@ If request async, return the process behind the request."
         (funcall pdd-url-extra-filter)))))
 
 (cl-defmethod pdd ((client pdd-url-client) url &key method
-                   params headers data resp filter done fail sync retry)
+                   params headers data resp filter done fail fine sync retry)
   "Send a request with CLIENT.
 See the generic method for args URL, METHOD, PARAMS, HEADERS, DATA, RESP,
-FILTER, DONE, FAIL, SYNC and RETRY and more."
-  (ignore params retry)
+FILTER, DONE, FAIL, FINE, SYNC and RETRY and more."
+  (ignore params fine retry)
   (let* ((tag (eieio-object-class client))
-         (handler pdd-default-error-handler)
+         (fail (or fail pdd-default-error-handler))
          (url-user-agent (or (oref client user-agent) pdd-user-agent))
          (url-proxy-services (or (oref client proxy-services) url-proxy-services))
          (rdata (pdd-transform-request data headers))
@@ -341,8 +345,7 @@ FILTER, DONE, FAIL, SYNC and RETRY and more."
                       (if done (pdd-funcall done s) (car s))))
                 (ignore-errors (kill-buffer buf))))
           (error (if fail (funcall fail err)
-                   (if handler (funcall handler err)
-                     (signal 'user-error (cdr err))))))
+                   (signal 'user-error (cdr err)))))
       ;; async
       (let ((buf (url-retrieve url
                                (lambda (status)
@@ -400,13 +403,13 @@ Or switch http client to `pdd-url-client' instead:\n
     (error "You should have `plz.el' and `curl' installed before using `pdd-plz-client'")))
 
 (cl-defmethod pdd ((client pdd-plz-client) url &key method
-                   params headers data resp filter done fail sync retry)
+                   params headers data resp filter done fail fine sync retry)
   "Send a request with CLIENT.
 See the generic method for args URL, METHOD, PARAMS HEADERS, DATA, RESP,
-FILTER, DONE, FAIL, SYNC and RETRY and more."
-  (ignore params retry)
+FILTER, DONE, FAIL, FINE, SYNC and RETRY and more."
+  (ignore params fine retry)
   (let* ((tag (eieio-object-class client))
-         (handler pdd-default-error-handler)
+         (fail (or fail pdd-default-error-handler))
          (plz-curl-default-args (if (slot-boundp client 'extra-args)
                                     (append (oref client extra-args) plz-curl-default-args)
                                   plz-curl-default-args))
@@ -449,8 +452,7 @@ FILTER, DONE, FAIL, SYNC and RETRY and more."
                                     (when-let* ((res (plz-error-response err)))
                                       (list 'http (plz-response-status res) (plz-response-body res))))))
                         (if fail (funcall fail err)
-                          (if handler (funcall handler err)
-                            (signal 'user-error (cdr err)))))))
+                          (signal 'user-error (cdr err))))))
     ;; data and headers
     (setq data (car rdata) headers (cadr rdata))
     (unless (alist-get "User-Agent" headers nil nil #'string-equal-ignore-case)
