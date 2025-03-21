@@ -49,7 +49,7 @@ Just request through `pdd`, with or without specifying an http client:
 And try to send requests like this:
 ``` emacs-lisp
 ;; By default, sync, get
-(pp (pdd "https://httpbin.org/user-agent"))
+(pdd "https://httpbin.org/user-agent")
 
 ;; Use :headers keyword to supply data sent in http header
 ;; Use :data keyword to supply data sent in http body
@@ -62,12 +62,12 @@ And try to send requests like this:
 ;; If :done is present and :sync t is absent, the request will be asynchronous!
 (pdd "https://httpbin.org/post"
   :data '(("key" . "value"))
-  :done (lambda (res) (pp res)))
+  :done (lambda (res) (print res)))
 
 ;; And with :fail to catch the error
 (pdd "https://httpbin.org/post"
   :data '(("key" . "value"))
-  :done (lambda (res) (pp res))
+  :done (lambda (res) (print res))
   :fail (lambda (err) (message "FAIL")))
 
 ;; Use `pdd-default-error-handler' to catch error when :fail is absent
@@ -76,7 +76,7 @@ And try to send requests like this:
        (lambda (err) (message "Crying %s..." (cadr err)))))
   (pdd "https://httpbin.org/post-error"
     :data '(("key" . "value"))
-    :done (lambda (res) (pp res))))
+    :done (lambda (res) (print res))))
 
 ;; Use :timeout to set how long one request can wait (seconds)
 ;; Use :retry to set times auto resend the request if timeout (for async only)
@@ -86,22 +86,22 @@ And try to send requests like this:
 (pdd "https://httpbin.org/post"
   :params '(("name" . "jerry") ("age" . 8)) ; these will be concated to url
   :headers '(("Content-Type" . "application/json")) ; can use abbrev as :headers '(json)
-  :data '(("key" . "value"))       ; this will be encoded to json string automatelly
-  :done (lambda (json) (pp json))  ; cause of auto parse, the argument `json' is an alist
-  :fail (lambda (err) (message "FAIL"))
+  :data '(("key" . "value"))         ; this will be encoded to json string automatelly
+  :done (lambda (json) (print json)) ; cause of auto parse, the argument `json' is an alist
+  :fail (lambda (err) (print err))
   :timeout 0.9 :retry 5)
 
 ;; Use :filter to provide logic as every chunk back (for stream feature)
 (pdd "https://httpbin.org/post"
   :data '(("key" . "value"))
   :filter (lambda () (message "%s" (buffer-size)))
-  :done (lambda (res) (pp res))
+  :done (lambda (res) (print res))
   :fail (lambda (err) (message "FAIL")))
 
 ;; The function :fine will run at last, no matter done or fail, everything is fine
 (pdd "https://httpbin.org/post"
   :data '(("key" . "value"))
-  :done (lambda (res) (pp res))
+  :done (lambda (res) (print res))
   :fail (lambda (err) (message "FAIL"))
   :fine (lambda () (message "kindness, please")))
 
@@ -109,9 +109,9 @@ And try to send requests like this:
 ;; If zero argument, current buffer is the one with raw responsed string
 (pdd "https://httpbin.org/ip" :done (lambda () (message "%s" (buffer-string))))
 (pdd "https://httpbin.org/ip" :done (lambda (body) (message "IP: %s" (cdar body))))
-(pdd "https://httpbin.org/ip" :done (lambda (_body headers) (message "%s" headers)))
-(pdd "https://httpbin.org/ip" :done (lambda (_ _ status-code) (message "%s" status-code)))
-(pdd "https://httpbin.org/ip" :done (lambda (_ _ _ http-version) (message "%s" http-version)))
+(pdd "https://httpbin.org/ip" :done (lambda (_body headers) (print headers)))
+(pdd "https://httpbin.org/ip" :done (lambda (_ _ status-code) (print status-code)))
+(pdd "https://httpbin.org/ip" :done (lambda (_ _ _ http-version) (print http-version)))
 
 ;; Specific method
 (pdd "https://httpbin.org/uuid")
@@ -129,6 +129,17 @@ And try to send requests like this:
 ;; Download
 (with-temp-file "~/aaa.jpeg"
   (insert (pdd "https://httpbin.org/image/jpeg")))
+
+;; In fact, the keywords :method, :data and :done can be omitted.
+;; Just place url/method/data/done in any order before other keyword args.
+;; Although not recommended, it is very convenient to send a test request this way
+(pdd "https://httpbin.org/anything")
+(pdd "https://httpbin.org/anything" #'print)
+(pdd #'print "https://httpbin.org/anything")
+(pdd 'delete "https://httpbin.org/delete")
+(pdd '((key . value)) "https://httpbin.org/anything" #'print)
+(pdd #'print 'put "https://httpbin.org/anything" '((key . value)) :headers '(json) :retry 3)
+(pdd #'insert 'post "https://httpbin.org/anything" :resp #'identity)
 ```
 
 ## API

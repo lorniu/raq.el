@@ -559,6 +559,25 @@ ARGS should be the arguments of function `pdd'."
 one argument (url) or two arguments (url method)")))
     pdd-default-client))
 
+(defun pdd-complete-absent-keywords (&rest args)
+  "Add the keywords absent for ARGS used by function `pdd'."
+  (let* ((pos (or (cl-position-if #'keywordp args) (length args)))
+         (fst (cl-subseq args 0 pos))
+         (lst (cl-subseq args pos))
+         (take (lambda (fn) (if-let* ((p (cl-position-if fn fst))) (pop (nthcdr p fst)))))
+         (url (funcall take (lambda (arg) (and (stringp arg) (string-prefix-p "http" arg)))))
+         (method (funcall take (lambda (arg) (memq arg '(get post put patch delete head options trace connect)))))
+         (done (funcall take #'functionp))
+         (params-or-data (car-safe fst))
+         params data)
+    (cl-assert url nil "Url is required")
+    (when params-or-data
+      (if (eq 'get (or method (plist-get lst :method)))
+          (setq params params-or-data)
+        (setq data params-or-data)))
+    `(,url ,@(if method `(:method ,method)) ,@(if done `(:done ,done))
+           ,@(if params `(:params ,params)) ,@(if data `(:data ,data)) ,@lst)))
+
 ;;;###autoload
 (cl-defmethod pdd (&rest args)
   "Send a request with `pdd-default-client'.
@@ -568,7 +587,7 @@ See the generic method for other ARGS and details."
     (unless (and client (eieio-object-p client) (object-of-class-p client 'pdd-client))
       (user-error "Make sure `pdd-default-client' is available.  eg:\n
 (setq pdd-default-client (pdd-url-client))\n\n\n"))
-    (apply #'pdd client args)))
+    (apply #'pdd client (apply #'pdd-complete-absent-keywords args))))
 
 (provide 'pdd)
 
