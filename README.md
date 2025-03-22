@@ -130,17 +130,32 @@ And try to send requests like this:
 ;; Download
 (with-temp-file "~/aaa.jpeg"
   (insert (pdd "https://httpbin.org/image/jpeg")))
+```
 
-;; In fact, the keywords :method, :data and :done can be omitted.
+Of course, there are tricks that can make things easier:
+``` emacs-lisp
+;; The keywords :method, :data and :done can be omitted.
 ;; Just place url/method/data/done in any order before other keyword args.
-;; Although not recommended, it is very convenient to send a test request this way
+;; Although not recommended, it is very convenient to send test requests this way
 (pdd "https://httpbin.org/anything")
 (pdd "https://httpbin.org/anything" #'print)
 (pdd #'print "https://httpbin.org/anything")
 (pdd 'delete "https://httpbin.org/delete")
 (pdd '((key . value)) "https://httpbin.org/anything" #'print)
-(pdd #'print 'put "https://httpbin.org/anything" '((key . value)) :headers '(json) :retry 3)
+(pdd #'print 'put "https://httpbin.org/anything" '((key . value)) :timeout 2 :retry 3)
 (pdd #'insert 'post "https://httpbin.org/anything" :resp #'identity)
+
+;; Another sugar is, you can simply code of :headers in the help of abbrevs.
+;; See `pdd-header-rewrite-rules' for more details. For example:
+(pdd "https://httpbin.org/anything"
+  :headers `(("Content-Type" . "application/json")
+             ("User-Agent" . "Emacs Agent")
+             ("Authorization" ,(concat "Bearer " token))
+             ("Accept" . "*/*"))
+  :done #'print)
+;; It can be simplied as:
+(pdd 'print "https://httpbin.org/anything"
+  :headers `(json ua-emacs (bear ,token) ("Accept" . "*/*")))
 ```
 ## Examples
 
