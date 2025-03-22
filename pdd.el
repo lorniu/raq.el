@@ -625,11 +625,12 @@ one argument (url) or two arguments (url method)")))
   "Send a request with `pdd-default-client'.
 In this case, the first argument in ARGS should be url instead of client.
 See the generic method for other ARGS and details."
-  (let ((client (pdd-ensure-default-client args)))
+  (let* ((args (apply #'pdd-complete-absent-keywords args))
+         (client (pdd-ensure-default-client args)))
     (unless (and client (eieio-object-p client) (object-of-class-p client 'pdd-client))
       (user-error "Make sure `pdd-default-client' is available.  eg:\n
 (setq pdd-default-client (pdd-url-client))\n\n\n"))
-    (apply #'pdd client (apply #'pdd-complete-absent-keywords args))))
+    (apply #'pdd client args)))
 
 (provide 'pdd)
 
