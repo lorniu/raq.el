@@ -142,6 +142,23 @@ And try to send requests like this:
 (pdd #'print 'put "https://httpbin.org/anything" '((key . value)) :headers '(json) :retry 3)
 (pdd #'insert 'post "https://httpbin.org/anything" :resp #'identity)
 ```
+## Examples
+
+Download file with progress bar display:
+``` emacs-lisp
+;; Replace the url with a big file to have a try
+;; you can abort the download by deleting the returned process
+(let ((reporter (make-progress-reporter "Downloading...")))
+  (pdd "https://httpbin.org/image/jpeg"
+    :filter (lambda (headers)
+              (let* ((total (string-to-number (alist-get 'content-length headers)))
+                     (percent (format "%.1f%%" (/ (* 100.0 (buffer-size)) total))))
+                (progress-reporter-update reporter percent)))
+    :done (lambda (raw)
+            (with-temp-file "~/aaa.jpeg"
+              (insert raw)
+              (progress-reporter-done reporter)))))
+```
 
 ## API
 
