@@ -92,6 +92,7 @@ And try to send requests like this:
   :timeout 0.9 :retry 5)
 
 ;; Use :filter to provide logic as every chunk back (for stream feature)
+;; It is a function with no arguments, or headers, or headers and process as arguments
 (pdd "https://httpbin.org/post"
   :data '(("key" . "value"))
   :filter (lambda () (message "%s" (buffer-size)))
